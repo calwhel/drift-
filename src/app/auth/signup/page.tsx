@@ -6,6 +6,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 
+function parseError(data: { error?: unknown }): string {
+  const err = data.error;
+  if (typeof err === "string") return err;
+  if (Array.isArray(err)) {
+    return err.map((e) => (typeof e === "object" && e && "message" in e ? String(e.message) : String(e))).join(". ");
+  }
+  return "Registration failed";
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("");
@@ -25,9 +34,10 @@ export default function SignupPage() {
       body: JSON.stringify({ email, password, businessName }),
     });
 
+    const data = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Registration failed");
+      setError(parseError(data));
       setLoading(false);
       return;
     }
@@ -41,7 +51,7 @@ export default function SignupPage() {
     setLoading(false);
 
     if (signInRes?.error) {
-      router.push("/auth/login");
+      setError("Account created but sign-in failed. Try logging in manually.");
       return;
     }
 
@@ -62,7 +72,7 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {error && (
               <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
-                {typeof error === "string" ? error : "Registration failed"}
+                {error}
               </p>
             )}
             <div>
@@ -73,6 +83,7 @@ export default function SignupPage() {
                 onChange={(e) => setBusinessName(e.target.value)}
                 className="input w-full"
                 required
+                minLength={2}
               />
             </div>
             <div>
@@ -95,6 +106,7 @@ export default function SignupPage() {
                 minLength={8}
                 required
               />
+              <p className="mt-1 text-2xs text-drift-muted">At least 8 characters</p>
             </div>
             <button type="submit" disabled={loading} className="btn-primary w-full py-2">
               {loading ? "Creating account…" : "Create account"}
