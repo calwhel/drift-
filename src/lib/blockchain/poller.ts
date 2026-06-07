@@ -1,8 +1,9 @@
 import { eq, and } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets } from "../db";
 import { calculateFee } from "../fees";
-import { getRequiredConfirmations } from "../constants";
+import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
+import { queueSettlements } from "../wallet/settlement";
 
 interface DetectedPayment {
   txHash: string;
@@ -11,27 +12,34 @@ interface DetectedPayment {
   network: string;
   confirmations: number;
   depositAddress: string;
-  customerEmail?: string;
 }
 
-// Blockchain API polling — uses env-configured API keys
+const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
+
 async function pollTron(address: string): Promise<DetectedPayment[]> {
   const apiKey = process.env.TRONGRID_API_KEY;
-  const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?limit=20`;
+  const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?limit=30&only_to=true`;
   const res = await fetch(url, {
     headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
   });
   if (!res.ok) return [];
 
   const data = await res.json();
-  return (data.data ?? []).map((tx: Record<string, unknown>) => ({
-    txHash: tx.transaction_id as string,
-    amount: Number(tx.value) / 1e6,
-    currency: "USDT",
-    network: "TRC20",
-    confirmations: 20,
-    depositAddress: address,
-  }));
+  return (data.data ?? [])
+    .filter(
+      (tx: Record<string, unknown>) =>
+        tx.to === address &&
+        tx.token_info &&
+        (tx.token_info as { address: string }).address === USDT_TRC20
+    )
+    .map((tx: Record<string, unknown>) => ({
+      txHash: tx.transaction_id as string,
+      amount: Number(tx.value) / 1e6,
+      currency: "USDT",
+      network: "TRC20",
+      confirmations: Number(tx.confirmed ?? 0) ? 20 : 1,
+      depositAddress: address,
+    }));
 }
 
 async function pollEvm(
@@ -41,6 +49,9 @@ async function pollEvm(
   apiUrl: string,
   apiKey: string
 ): Promise<DetectedPayment[]> {
+  const contracts = TOKEN_CONTRACTS[network as keyof typeof TOKEN_CONTRACTS];
+  const contract = contracts?.[currency];
+
   const res = await fetch(
     `${apiUrl}?module=account&action=tokentx&address=${address}&sort=desc&apikey=${apiKey}`
   );
@@ -48,38 +59,71 @@ async function pollEvm(
   const data = await res.json();
   if (data.status !== "1") return [];
 
-  return (data.result ?? []).slice(0, 10).map((tx: Record<string, string>) => ({
-    txHash: tx.hash,
-    amount: Number(tx.value) / 1e6,
-    currency,
-    network,
-    confirmations: Number(tx.confirmations ?? 0),
-    depositAddress: address,
-  }));
+  const decimals = getDecimals(currency);
+
+  return (data.result ?? [])
+    .filter(
+      (tx: Record<string, string>) =>
+        tx.to?.toLowerCase() === address.toLowerCase() &&
+        (!contract || tx.contractAddress?.toLowerCase() === contract.toLowerCase())
+    )
+    .slice(0, 15)
+    .map((tx: Record<string, string>) => ({
+      txHash: tx.hash,
+      amount: Number(tx.value) / Math.pow(10, decimals),
+      currency,
+      network,
+      confirmations: Number(tx.confirmations ?? 0),
+      depositAddress: address,
+    }));
 }
 
 async function pollBitcoin(address: string): Promise<DetectedPayment[]> {
   const res = await fetch(`https://blockstream.info/api/address/${address}/txs`);
   if (!res.ok) return [];
   const txs = await res.json();
+  const tipHeight = await getBitcoinBlockHeight();
+  const results: DetectedPayment[] = [];
 
-  return (txs ?? []).slice(0, 5).flatMap((tx: Record<string, unknown>) => {
+  for (const tx of (txs ?? []).slice(0, 10)) {
     const vout = tx.vout as Array<{ scriptpubkey_address: string; value: number }>;
+    const status = tx.status as { confirmed: boolean; block_height?: number };
     const matching = vout?.filter((o) => o.scriptpubkey_address === address) ?? [];
-    return matching.map((o) => ({
-      txHash: tx.txid as string,
-      amount: o.value / 1e8,
-      currency: "BTC",
-      network: "Bitcoin",
-      confirmations: (tx.status as { confirmed: boolean })?.confirmed ? 3 : 0,
-      depositAddress: address,
-    }));
-  });
+    const confirmations = status.confirmed && status.block_height
+      ? Math.max(tipHeight - status.block_height + 1, 1)
+      : 0;
+
+    for (const o of matching) {
+      results.push({
+        txHash: tx.txid as string,
+        amount: o.value / 1e8,
+        currency: "BTC",
+        network: "Bitcoin",
+        confirmations,
+        depositAddress: address,
+      });
+    }
+  }
+
+  return results;
+}
+
+let cachedBtcHeight = 0;
+let btcHeightAt = 0;
+async function getBitcoinBlockHeight(): Promise<number> {
+  if (Date.now() - btcHeightAt < 60_000 && cachedBtcHeight) return cachedBtcHeight;
+  const res = await fetch("https://blockstream.info/api/blocks/tip/height");
+  if (res.ok) {
+    cachedBtcHeight = Number(await res.text());
+    btcHeightAt = Date.now();
+  }
+  return cachedBtcHeight || 800000;
 }
 
 async function pollSolana(address: string): Promise<DetectedPayment[]> {
   const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
-  const res = await fetch(rpc, {
+
+  const sigRes = await fetch(rpc, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -89,16 +133,47 @@ async function pollSolana(address: string): Promise<DetectedPayment[]> {
       params: [address, { limit: 10 }],
     }),
   });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.result ?? []).map((sig: { signature: string }) => ({
-    txHash: sig.signature,
-    amount: 0, // resolved in production via getTransaction
-    currency: "SOL",
-    network: "Solana",
-    confirmations: 32,
-    depositAddress: address,
-  }));
+  if (!sigRes.ok) return [];
+  const sigData = await sigRes.json();
+
+  const results: DetectedPayment[] = [];
+
+  for (const sig of (sigData.result ?? []).slice(0, 5)) {
+    const txRes = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransaction",
+        params: [sig.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+      }),
+    });
+    if (!txRes.ok) continue;
+    const txData = await txRes.json();
+    const tx = txData.result;
+    if (!tx?.meta || tx.meta.err) continue;
+
+    const pre = tx.meta.preBalances as number[];
+    const post = tx.meta.postBalances as number[];
+    const accountKeys = tx.transaction.message.accountKeys as Array<{ pubkey: string }>;
+    const idx = accountKeys.findIndex((k) => k.pubkey === address);
+    if (idx < 0) continue;
+
+    const delta = (post[idx] - pre[idx]) / 1e9;
+    if (delta <= 0) continue;
+
+    results.push({
+      txHash: sig.signature,
+      amount: delta,
+      currency: "SOL",
+      network: "Solana",
+      confirmations: sig.confirmationStatus === "finalized" ? 32 : 1,
+      depositAddress: address,
+    });
+  }
+
+  return results;
 }
 
 export async function pollAllNetworks() {
@@ -107,8 +182,11 @@ export async function pollAllNetworks() {
     .from(paymentLinks)
     .where(eq(paymentLinks.status, "active"));
 
+  const now = new Date();
+  const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
+
   const addresses = new Map<string, { currency: string; network: string }>();
-  for (const link of activeLinks) {
+  for (const link of validLinks) {
     addresses.set(link.depositAddress, {
       currency: link.currency,
       network: link.network,
@@ -155,7 +233,25 @@ export async function pollAllNetworks() {
     await processDetectedPayment(payment);
   }
 
+  await updateConfirmingTransactions();
+
   return detected.length;
+}
+
+async function updateConfirmingTransactions() {
+  const confirming = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.status, "confirming"));
+
+  for (const tx of confirming) {
+    if (!tx.txHash) continue;
+    const required = getRequiredConfirmations(tx.currency);
+    const current = Number(tx.confirmations ?? 0);
+    if (current >= required) {
+      await completeTransaction(tx.id);
+    }
+  }
 }
 
 async function processDetectedPayment(payment: DetectedPayment) {
@@ -168,11 +264,18 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .limit(1);
 
   if (existing) {
-    if (
-      existing.status === "confirming" &&
-      payment.confirmations >= getRequiredConfirmations(existing.currency)
-    ) {
-      await completeTransaction(existing.id);
+    if (existing.status === "confirming") {
+      await db
+        .update(transactions)
+        .set({
+          confirmations: String(payment.confirmations),
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, existing.id));
+
+      if (payment.confirmations >= getRequiredConfirmations(existing.currency)) {
+        await completeTransaction(existing.id);
+      }
     }
     return;
   }
@@ -189,10 +292,16 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .limit(1);
 
   if (!link) return;
+  if (link.expiry && link.expiry < new Date()) return;
 
   const expectedAmount = Number(link.amount);
-  if (payment.amount > 0 && Math.abs(payment.amount - expectedAmount) > expectedAmount * 0.01) {
-    return;
+  const tolerance = expectedAmount * 0.01;
+  let status = "confirming";
+
+  if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
+    status = "underpaid";
+  } else if (payment.amount > expectedAmount + tolerance) {
+    status = "overpaid";
   }
 
   const amount = payment.amount || expectedAmount;
@@ -206,7 +315,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
       amount: String(amount),
       currency: link.currency,
       network: link.network,
-      status: "confirming",
+      status,
       txHash: payment.txHash,
       feeAmount: String(feeAmount),
       netAmount: String(netAmount),
@@ -216,7 +325,10 @@ async function processDetectedPayment(payment: DetectedPayment) {
 
   await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
 
-  if (payment.confirmations >= getRequiredConfirmations(link.currency)) {
+  if (
+    (status === "confirming" || status === "overpaid") &&
+    payment.confirmations >= getRequiredConfirmations(link.currency)
+  ) {
     await completeTransaction(tx.id);
   }
 }
@@ -229,8 +341,10 @@ async function completeTransaction(transactionId: string) {
     .limit(1);
 
   if (!tx || tx.status === "completed") return;
+  if (tx.status === "underpaid" || tx.status === "failed") return;
 
   const net = Number(tx.netAmount ?? 0);
+  const fee = Number(tx.feeAmount ?? 0);
 
   await db
     .update(transactions)
@@ -249,6 +363,31 @@ async function completeTransaction(transactionId: string) {
       .update(wallets)
       .set({ balance: String(newBalance) })
       .where(eq(wallets.id, wallet.id));
+  }
+
+  if (tx.paymentLinkId) {
+    const [link] = await db
+      .select()
+      .from(paymentLinks)
+      .where(eq(paymentLinks.id, tx.paymentLinkId))
+      .limit(1);
+
+    if (link) {
+      await db
+        .update(paymentLinks)
+        .set({ status: "paid", paidAt: new Date() })
+        .where(eq(paymentLinks.id, link.id));
+
+      await queueSettlements(
+        transactionId,
+        tx.userId,
+        tx.currency,
+        tx.network,
+        fee,
+        net,
+        link.derivationIndex
+      );
+    }
   }
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");

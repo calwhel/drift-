@@ -12,11 +12,11 @@ export async function GET(
     .where(eq(paymentLinks.shortCode, params.shortcode))
     .limit(1);
 
-  if (!link || link.status !== "active") {
+  if (!link || (link.status !== "active" && link.status !== "paid")) {
     return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
   }
 
-  if (link.expiry && new Date(link.expiry) < new Date()) {
+  if (link.expiry && new Date(link.expiry) < new Date() && link.status !== "paid") {
     return NextResponse.json({ error: "Payment link expired" }, { status: 410 });
   }
 
@@ -28,5 +28,7 @@ export async function GET(
     network: link.network,
     deposit_address: link.depositAddress,
     redirect_url: link.redirectUrl,
+    expiry: link.expiry,
+    status: link.status,
   });
 }

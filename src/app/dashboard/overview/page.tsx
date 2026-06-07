@@ -16,6 +16,8 @@ interface DashboardStats {
   totalPayments: number;
   completed: number;
   pending: number;
+  revenueChart?: Array<{ date: string; revenue: string | number }>;
+  paymentMethods?: Record<string, number>;
   recentTransactions: Array<{
     id: string;
     amount: string;
@@ -85,11 +87,11 @@ export default function DashboardOverviewPage() {
                 </p>
               </div>
             </div>
-            <RevenueChart />
+            <RevenueChart data={stats?.revenueChart} />
           </div>
           <div className="card p-4">
             <h2 className="section-title">Payment methods</h2>
-            <PaymentMethodsChart />
+            <PaymentMethodsChart data={stats?.paymentMethods} total={stats?.totalGross} />
           </div>
         </div>
 
@@ -105,7 +107,7 @@ export default function DashboardOverviewPage() {
                 ${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
               <div className="mt-3 flex gap-2">
-                <button className="btn-primary flex-1">Withdraw</button>
+                <Link href="/dashboard/payouts" className="btn-primary flex-1 text-center">Withdraw</Link>
                 <Link href="/dashboard/wallets" className="btn-secondary flex-1 text-center">
                   Wallets
                 </Link>

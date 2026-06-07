@@ -45,7 +45,10 @@ export default function TransactionsPage() {
       page: String(page),
       limit: String(PER_PAGE),
     });
-    if (statusFilter !== "All") params.set("status", statusFilter.toLowerCase());
+    if (statusFilter !== "All") {
+      const statusParam = statusFilter === "Pending" ? "confirming" : statusFilter.toLowerCase();
+      params.set("status", statusParam);
+    }
     if (currencyFilter !== "All") params.set("currency", currencyFilter);
 
     fetch(`/api/transactions?${params}`)

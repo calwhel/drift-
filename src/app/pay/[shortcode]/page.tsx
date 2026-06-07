@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { Logo } from "@/components/logo";
 import { Icon } from "@/components/icons";
@@ -15,14 +15,19 @@ interface PaymentLinkData {
   network: string;
   deposit_address: string;
   redirect_url: string | null;
+  expiry: string | null;
+  status: string;
 }
 
 export default function CheckoutPage() {
   const params = useParams();
+  const router = useRouter();
   const shortcode = params.shortcode as string;
   const [link, setLink] = useState<PaymentLinkData | null>(null);
   const [error, setError] = useState("");
-  const [timeLeft, setTimeLeft] = useState(15 * 60 - 1);
+  const [paymentStatus, setPaymentStatus] = useState("pending");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,16 +36,49 @@ export default function CheckoutPage() {
         if (!r.ok) throw new Error("Not found");
         return r.json();
       })
-      .then(setLink)
+      .then((data) => {
+        setLink(data);
+        if (data.expiry) {
+          const remaining = Math.max(
+            0,
+            Math.floor((new Date(data.expiry).getTime() - Date.now()) / 1000)
+          );
+          setTimeLeft(remaining);
+        }
+        if (data.status === "paid") setPaymentStatus("completed");
+      })
       .catch(() => setError("Payment link not found or expired"));
   }, [shortcode]);
 
-  useEffect(() => {
-    const timer = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const pollStatus = useCallback(() => {
+    fetch(`/api/payment-links/public/${shortcode}/status`)
+      .then((r) => r.json())
+      .then((data) => {
+        setPaymentStatus(data.status);
+        if (data.status === "completed" && data.redirect_url) {
+          setTimeout(() => router.push(data.redirect_url), 2000);
+        }
+      })
+      .catch(() => {});
+  }, [shortcode, router]);
 
-  const timeDisplay = `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`;
+  useEffect(() => {
+    if (!link || paymentStatus === "completed") return;
+    pollStatus();
+    const interval = setInterval(pollStatus, 5000);
+    return () => clearInterval(interval);
+  }, [link, paymentStatus, pollStatus]);
+
+  useEffect(() => {
+    if (timeLeft === null) return;
+    const timer = setInterval(() => setTimeLeft((t) => (t !== null && t > 0 ? t - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [timeLeft]);
+
+  const timeDisplay =
+    timeLeft !== null
+      ? `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`
+      : null;
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -64,18 +102,39 @@ export default function CheckoutPage() {
     );
   }
 
+  if (paymentStatus === "completed") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-drift-bg px-4">
+        <div className="card max-w-sm p-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-drift-green/20">
+            <Icon name="CheckCircle" className="h-6 w-6 text-drift-green" />
+          </div>
+          <h1 className="text-lg font-semibold text-white">Payment received</h1>
+          <p className="mt-2 text-sm text-drift-muted">
+            {link.amount} {link.currency} has been confirmed.
+          </p>
+          {link.redirect_url && (
+            <p className="mt-2 text-2xs text-drift-muted">Redirecting…</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-drift-bg">
       <header className="border-b border-drift-border">
         <div className="mx-auto flex h-11 max-w-5xl items-center justify-between px-4">
           <Logo size="sm" showSubtitle={false} />
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-drift-muted">Expires in</span>
-            <span className="font-mono font-medium tabular-nums text-white">{timeDisplay}</span>
-          </div>
+          {timeDisplay && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-drift-muted">Expires in</span>
+              <span className="font-mono font-medium tabular-nums text-white">{timeDisplay}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-2xs text-drift-muted">
             <Icon name="Shield" className="h-3 w-3" />
-            Encrypted
+            {paymentStatus === "confirming" ? "Confirming…" : "Encrypted"}
           </div>
         </div>
       </header>
@@ -101,6 +160,16 @@ export default function CheckoutPage() {
               <p className="text-lg font-semibold tabular-nums text-white">
                 {link.amount} {link.currency}
               </p>
+            </div>
+            <div className="mt-4">
+              <label className="section-label mb-1 block">Email for receipt (optional)</label>
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                className="input w-full text-xs"
+                placeholder="you@example.com"
+              />
             </div>
           </div>
 
@@ -141,7 +210,7 @@ export default function CheckoutPage() {
                   Send only {link.currency} on {link.network}. Other assets will be lost.
                 </p>
                 <p className="text-2xs text-drift-muted">
-                  1.5% processing fee applied. Merchant receives 98.5%.
+                  Waiting for payment… Status updates every 5 seconds.
                 </p>
               </div>
             </div>

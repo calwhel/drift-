@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pollAllNetworks } from "@/lib/blockchain/poller";
 import { processPendingWebhooks } from "@/lib/webhooks";
+import { processPendingSettlements } from "@/lib/wallet/settlement";
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get("authorization");
@@ -10,11 +11,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const detected = await pollAllNetworks();
+    const settlements = await processPendingSettlements();
     await processPendingWebhooks();
 
     return NextResponse.json({
       ok: true,
       detected,
+      settlements,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

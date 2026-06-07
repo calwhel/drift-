@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, webhooks, webhookDeliveries, transactions } from "./db";
 
 export interface WebhookPayload {
+  event: string;
   transaction_id: string;
   status: string;
   amount: string;
@@ -35,6 +36,7 @@ export async function dispatchWebhooks(
     .where(eq(webhooks.userId, userId));
 
   const payload: WebhookPayload = {
+    event,
     transaction_id: tx.id,
     status: tx.status,
     amount: tx.amount,
@@ -87,8 +89,10 @@ export async function processPendingWebhooks() {
         headers: {
           "Content-Type": "application/json",
           "X-Drift-Signature": signature,
+          "X-Drift-Event": (delivery.payload as WebhookPayload).event ?? "unknown",
         },
         body,
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (res.ok) {
@@ -100,14 +104,24 @@ export async function processPendingWebhooks() {
         throw new Error(`HTTP ${res.status}`);
       }
     } catch (err) {
+      const nextAttempts = attempts + 1;
       await db
         .update(webhookDeliveries)
         .set({
-          attempts: String(attempts + 1),
+          attempts: String(nextAttempts),
           lastError: err instanceof Error ? err.message : "Unknown error",
-          status: attempts + 1 >= 3 ? "failed" : "pending",
+          status: nextAttempts >= 3 ? "failed" : "pending",
         })
         .where(eq(webhookDeliveries.id, delivery.id));
     }
   }
+}
+
+export function verifyWebhookSignature(
+  secret: string,
+  body: string,
+  signature: string
+): boolean {
+  const expected = signWebhookPayload(secret, body);
+  return expected === signature;
 }

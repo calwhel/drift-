@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/"
+restartPolicyType = "on_failure"
+
+# Schedule payment polling every minute (Railway cron)
+# Configure in Railway dashboard: Cron → GET $NEXTAUTH_URL/api/cron/poll-payments
+# Header: Authorization: Bearer $CRON_SECRET

@@ -7,7 +7,7 @@ import { Icon } from "../icons";
 
 const navLinks = [
   { label: "Features", href: "#features" },
-  { label: "Developers", href: "/dashboard", isRoute: true },
+  { label: "Developers", href: "/developers", isRoute: true },
   { label: "Pricing", href: "#pricing" },
   { label: "Resources", href: "#features", hasChevron: true },
 ];
