@@ -49,7 +49,7 @@ export default function LandingPage() {
 
             <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-center lg:justify-start">
               <Link
-                href="/dashboard"
+                href="/auth/signup"
                 className="flex items-center gap-2 rounded bg-[#7c3aed] px-5 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-[#6d28d9]"
               >
                 Get Started Free
@@ -178,7 +178,7 @@ export default function LandingPage() {
             Join thousands of businesses already using Drift Payment.
           </p>
           <Link
-            href="/dashboard"
+            href="/auth/signup"
             className="mt-6 inline-flex items-center gap-2 rounded bg-[#7c3aed] px-6 py-2.5 text-[14px] font-medium text-white hover:bg-[#6d28d9]"
           >
             Get Started Free

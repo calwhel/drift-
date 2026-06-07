@@ -9,13 +9,29 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { revenueData } from "@/lib/mock-data";
 
-export function RevenueChart() {
+interface RevenueChartProps {
+  data?: Array<{ date: string; revenue: string | number }>;
+}
+
+export function RevenueChart({ data = [] }: RevenueChartProps) {
+  const chartData = data.map((d) => ({
+    date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    revenue: Number(d.revenue),
+  }));
+
+  if (chartData.length === 0) {
+    return (
+      <div className="flex h-[200px] items-center justify-center text-xs text-drift-muted">
+        No revenue data yet
+      </div>
+    );
+  }
+
   return (
     <div className="h-[200px] min-h-[200px] w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={revenueData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.12} />

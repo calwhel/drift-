@@ -7,7 +7,7 @@ import { Icon } from "../icons";
 
 const navLinks = [
   { label: "Features", href: "#features" },
-  { label: "Developers", href: "/dashboard", isRoute: true },
+  { label: "Developers", href: "/developers", isRoute: true },
   { label: "Pricing", href: "#pricing" },
   { label: "Resources", href: "#features", hasChevron: true },
 ];
@@ -45,11 +45,11 @@ export function LandingNavbar() {
         </div>
 
         <div className="hidden items-center gap-5 lg:flex">
-          <Link href="/dashboard" className="text-[13px] text-[#9ca3af] transition-colors hover:text-white">
+          <Link href="/auth/login" className="text-[13px] text-[#9ca3af] transition-colors hover:text-white">
             Login
           </Link>
           <Link
-            href="/dashboard"
+            href="/auth/signup"
             className="rounded bg-[#7c3aed] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#6d28d9]"
           >
             Get Started Free
@@ -91,11 +91,11 @@ export function LandingNavbar() {
             )}
           </div>
           <div className="mt-4 flex flex-col gap-2 border-t border-[#1e1e2e] pt-4">
-            <Link href="/dashboard" onClick={() => setOpen(false)} className="px-3 py-2.5 text-sm text-[#9ca3af]">
+            <Link href="/auth/login" onClick={() => setOpen(false)} className="px-3 py-2.5 text-sm text-[#9ca3af]">
               Login
             </Link>
             <Link
-              href="/dashboard"
+              href="/auth/signup"
               onClick={() => setOpen(false)}
               className="rounded bg-[#7c3aed] px-3 py-2.5 text-center text-sm font-medium text-white"
             >
