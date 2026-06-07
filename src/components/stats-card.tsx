@@ -1,42 +1,36 @@
 import { cn } from "@/lib/utils";
-import { Icon, type IconName } from "./icons";
+import { statsCards } from "@/lib/mock-data";
 
-interface StatsCardProps {
-  label: string;
-  value: string;
-  change: string;
-  positive: boolean;
-  icon: IconName;
-  color: string;
+interface StatsRowProps {
+  className?: string;
 }
 
-const iconColors: Record<string, string> = {
-  purple: "bg-drift-purple/10 text-drift-purple",
-  blue: "bg-blue-500/10 text-blue-400",
-  green: "bg-drift-green/10 text-drift-green",
-  orange: "bg-drift-orange/10 text-drift-orange",
-};
-
-export function StatsCard({ label, value, change, positive, icon, color }: StatsCardProps) {
+export function StatsRow({ className }: StatsRowProps) {
   return (
-    <div className="rounded-xl border border-drift-border bg-drift-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", iconColors[color])}>
-          <Icon name={icon} className="h-4 w-4" />
+    <div
+      className={cn(
+        "card flex divide-x divide-drift-border overflow-x-auto",
+        className
+      )}
+    >
+      {statsCards.map((card) => (
+        <div key={card.label} className="min-w-[140px] flex-1 px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="section-label">{card.label}</span>
+            <span
+              className={cn(
+                "text-2xs tabular-nums",
+                card.positive ? "text-drift-green" : "text-drift-red"
+              )}
+            >
+              {card.change}
+            </span>
+          </div>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-white">
+            {card.value}
+          </p>
         </div>
-      </div>
-      <p className="text-xs text-drift-muted">{label}</p>
-      <p className="mt-1 text-xl font-bold text-white">{value}</p>
-      <div className="mt-2 flex items-center gap-1">
-        <Icon
-          name={positive ? "ArrowUpRight" : "ArrowDownRight"}
-          className={cn("h-3 w-3", positive ? "text-drift-green" : "text-drift-red")}
-        />
-        <span className={cn("text-xs font-medium", positive ? "text-drift-green" : "text-drift-red")}>
-          {change}
-        </span>
-        <span className="text-xs text-drift-muted">vs Apr 1 - Apr 30</span>
-      </div>
+      ))}
     </div>
   );
 }

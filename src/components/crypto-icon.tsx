@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils";
 
 const colors: Record<string, string> = {
-  USDT: "bg-drift-green",
-  BTC: "bg-drift-orange",
-  USDC: "bg-blue-500",
-  ETH: "bg-purple-400",
-  BNB: "bg-yellow-500",
+  USDT: "text-drift-green",
+  BTC: "text-drift-orange",
+  USDC: "text-blue-400",
+  ETH: "text-violet-400",
+  BNB: "text-yellow-500",
 };
 
 export function CryptoIcon({
@@ -13,20 +13,19 @@ export function CryptoIcon({
   size = "sm",
 }: {
   symbol: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md";
 }) {
-  const sizeClasses = { sm: "h-6 w-6 text-[10px]", md: "h-8 w-8 text-xs", lg: "h-10 w-10 text-sm" };
-  const letter = symbol.slice(0, 1);
+  const sizeClasses = { sm: "h-4 w-4 text-2xs", md: "h-5 w-5 text-xs" };
 
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full font-bold text-white",
-        colors[symbol] || "bg-drift-purple",
+        "flex shrink-0 items-center justify-center rounded-sm border border-drift-border bg-drift-bg font-medium",
+        colors[symbol] || "text-drift-muted",
         sizeClasses[size]
       )}
     >
-      {letter}
+      {symbol.slice(0, 1)}
     </div>
   );
 }

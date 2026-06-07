@@ -5,10 +5,9 @@
 :root {
   --background: #0a0a0f;
   --foreground: #ffffff;
-  --card: #12121a;
-  --purple: #7c3aed;
-  --green: #22c55e;
-  --muted: #94a3b8;
+  --card: #111118;
+  --border: #1e1e2e;
+  --muted: #9ca3af;
 }
 
 * {
@@ -20,17 +19,42 @@ body {
   background: var(--background);
   font-family: var(--font-inter), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@layer components {
+  .card {
+    @apply rounded border border-drift-border bg-drift-card;
+  }
+
+  .btn-primary {
+    @apply rounded bg-drift-purple px-3 py-1.5 text-xs font-medium text-white hover:bg-[#6d28d9];
+  }
+
+  .btn-secondary {
+    @apply rounded border border-drift-border bg-transparent px-3 py-1.5 text-xs font-medium text-white hover:bg-drift-hover;
+  }
+
+  .btn-ghost {
+    @apply rounded px-3 py-1.5 text-xs font-medium text-drift-muted hover:bg-drift-hover hover:text-white;
+  }
+
+  .input {
+    @apply rounded border border-drift-border bg-drift-bg px-3 py-1.5 text-sm text-white placeholder:text-drift-muted focus:border-[#3f3f50] focus:outline-none;
+  }
+
+  .section-title {
+    @apply text-sm font-medium text-white;
+  }
+
+  .section-label {
+    @apply text-2xs font-medium uppercase tracking-wide text-drift-muted;
   }
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -39,9 +63,8 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: #1e1e2e;
-  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2e2e3e;
+  background: #2a2a38;
 }

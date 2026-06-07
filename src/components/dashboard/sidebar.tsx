@@ -23,37 +23,36 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={onClose} />
+        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={onClose} />
       )}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-drift-border bg-drift-bg transition-transform",
-          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-          "lg:static"
+          "fixed inset-y-0 left-0 z-50 flex w-[200px] flex-col border-r border-drift-border bg-drift-bg transition-transform lg:static",
+          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b border-drift-border px-5">
-          <Logo size="sm" />
+        <div className="flex h-11 items-center justify-between border-b border-drift-border px-3">
+          <Logo size="sm" showSubtitle={false} />
           <button onClick={onClose} className="text-drift-muted lg:hidden">
-            <Icon name="X" className="h-5 w-5" />
+            <Icon name="X" className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <ul className="space-y-0.5">
+        <nav className="flex-1 overflow-y-auto px-2 py-2">
+          <ul className="space-y-px">
             {navItems.map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    "flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] transition-colors",
                     isActive(item.href)
-                      ? "bg-drift-purple text-white"
-                      : "text-drift-muted hover:bg-drift-card-hover hover:text-white"
+                      ? "bg-drift-hover font-medium text-white"
+                      : "text-drift-muted hover:bg-drift-hover hover:text-white"
                   )}
                 >
-                  <Icon name={item.icon as IconName} className="h-4 w-4 shrink-0" />
+                  <Icon name={item.icon as IconName} className="h-3.5 w-3.5 shrink-0 opacity-60" />
                   {item.label}
                 </Link>
               </li>
@@ -61,36 +60,15 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        <div className="border-t border-drift-border p-4">
-          <div className="rounded-xl border border-drift-border bg-drift-card p-4">
-            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-drift-purple/10">
-              <Icon name="Crown" className="h-4 w-4 text-drift-purple" />
-            </div>
-            <p className="text-sm font-semibold text-white">Upgrade to Pro</p>
-            <p className="mt-1 text-xs text-drift-muted">Unlock advanced features</p>
-            <button className="mt-3 w-full rounded-lg border border-drift-purple py-2 text-xs font-medium text-drift-purple transition-colors hover:bg-drift-purple hover:text-white">
-              Upgrade Now
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-drift-border bg-drift-card p-3">
-            <p className="text-xs text-drift-muted">Total Balance</p>
-            <div className="mt-1 flex items-center justify-between">
-              <p className="text-lg font-bold text-white">$24,560.00</p>
-              <Icon name="Eye" className="h-4 w-4 text-drift-muted" />
-            </div>
-            <p className="mt-1 text-xs text-drift-green">+12.5% vs Apr 1 - Apr 30</p>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-drift-purple text-sm font-bold text-white">
+        <div className="border-t border-drift-border p-2">
+          <div className="flex items-center gap-2 rounded-sm px-2 py-1.5">
+            <div className="flex h-6 w-6 items-center justify-center rounded-sm bg-drift-hover text-2xs font-medium text-white">
               JD
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-medium text-white">John Doe</p>
-              <p className="text-xs text-drift-muted">Business Account</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium text-white">John Doe</p>
+              <p className="truncate text-2xs text-drift-muted">Business</p>
             </div>
-            <Icon name="ChevronDown" className="h-4 w-4 shrink-0 text-drift-muted" />
           </div>
         </div>
       </aside>
