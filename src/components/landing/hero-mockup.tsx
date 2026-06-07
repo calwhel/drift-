@@ -1,4 +1,11 @@
-export function HeroMockup() {
+import { cn } from "@/lib/utils";
+
+interface HeroMockupProps {
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export function HeroMockup({ className, style }: HeroMockupProps) {
   const stats = [
     { label: "Total Gross", value: "$24,560", change: "+12.5%", up: true },
     { label: "Total Payments", value: "356", change: "+8.2%", up: true },
@@ -15,9 +22,12 @@ export function HeroMockup() {
   ];
 
   return (
-    <div className="relative w-full max-w-[580px] lg:[transform:perspective(1400px)_rotateY(-12deg)_rotateX(6deg)]">
     <div
-      className="relative w-full overflow-hidden rounded-lg border border-[#2a2a38] bg-[#111118] shadow-[0_20px_40px_-12px_rgba(0,0,0,0.6)] lg:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.7)]"
+      className={cn(
+        "relative w-[580px] overflow-hidden rounded-lg border border-[#2a2a38] bg-[#111118] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.7)]",
+        className
+      )}
+      style={style}
     >
       <div className="flex items-center gap-1.5 border-b border-[#1e1e2e] bg-[#0d0d14] px-3 py-2">
         <div className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
@@ -28,8 +38,8 @@ export function HeroMockup() {
         </div>
       </div>
 
-      <div className="flex h-[280px] sm:h-[320px] lg:h-[340px]">
-        <div className="hidden w-[110px] shrink-0 border-r border-[#1e1e2e] bg-[#0a0a0f] p-2 sm:block sm:w-[130px] sm:p-2.5">
+      <div className="flex h-[340px]">
+        <div className="w-[130px] shrink-0 border-r border-[#1e1e2e] bg-[#0a0a0f] p-2.5">
           <div className="mb-3 flex items-center gap-1.5">
             <div className="flex h-5 w-5 items-center justify-center rounded bg-[#7c3aed] text-[8px] font-bold text-white">D</div>
             <span className="text-[9px] font-bold text-white">DRIFT</span>
@@ -46,10 +56,10 @@ export function HeroMockup() {
           ))}
         </div>
 
-        <div className="flex-1 overflow-hidden p-2 sm:p-2.5">
+        <div className="flex-1 overflow-hidden p-2.5">
           <p className="text-[10px] font-semibold text-white">Overview</p>
 
-          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
             {stats.map((s) => (
               <div key={s.label} className="rounded border border-[#1e1e2e] bg-[#0d0d14] px-2 py-1.5">
                 <p className="text-[7px] text-[#6b7280]">{s.label}</p>
@@ -59,17 +69,17 @@ export function HeroMockup() {
             ))}
           </div>
 
-          <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-5">
-            <div className="rounded border border-[#1e1e2e] bg-[#0d0d14] p-2 sm:col-span-3">
+          <div className="mt-2 grid grid-cols-5 gap-1.5">
+            <div className="col-span-3 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
               <p className="text-[8px] text-[#6b7280]">Payment Overview</p>
-              <div className="mt-1 flex h-[60px] items-end gap-px sm:h-[72px]">
+              <div className="mt-1 flex h-[72px] items-end gap-px">
                 {chartBars.map((h, i) => (
                   <div key={i} className="flex-1 rounded-t bg-[#7c3aed]/50" style={{ height: `${h}%` }} />
                 ))}
               </div>
             </div>
 
-            <div className="hidden rounded border border-[#1e1e2e] bg-[#0d0d14] p-2 sm:col-span-2 sm:block">
+            <div className="col-span-2 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
               <p className="text-[8px] text-[#6b7280]">Payment Methods</p>
               <div className="relative mx-auto mt-1 h-14 w-14">
                 <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
@@ -85,7 +95,7 @@ export function HeroMockup() {
             </div>
           </div>
 
-          <div className="mt-2 hidden rounded border border-[#1e1e2e] bg-[#0d0d14] p-2 sm:block">
+          <div className="mt-2 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
             <p className="mb-1 text-[8px] text-[#6b7280]">Recent Transactions</p>
             <table className="w-full text-[7px]">
               <thead>
@@ -112,7 +122,6 @@ export function HeroMockup() {
           </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }
