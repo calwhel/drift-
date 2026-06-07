@@ -13,23 +13,46 @@ export default function PaymentLinksPage() {
   const [description, setDescription] = useState("Access to premium content and features.");
   const [amount, setAmount] = useState("120.00");
   const [currency, setCurrency] = useState("USDT");
-  const [expiryEnabled, setExpiryEnabled] = useState(true);
-  const [expiry, setExpiry] = useState("7 days");
-  const [redirectUrl, setRedirectUrl] = useState("https://yoursite.com/success");
+  const [redirectUrl, setRedirectUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState("");
+  const [depositAddress, setDepositAddress] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const paymentUrl = "drift.to/pay/abc123";
+  const handleCreate = async () => {
+    setLoading(true);
+    const res = await fetch("/api/payment-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: name,
+        description,
+        amount: Number(amount),
+        currency,
+        redirect_url: redirectUrl || undefined,
+      }),
+    });
+    setLoading(false);
+    if (!res.ok) return;
+    const link = await res.json();
+    setCheckoutUrl(`${window.location.origin}/pay/${link.shortCode}`);
+    setDepositAddress(link.depositAddress);
+    router.push(`/pay/${link.shortCode}`);
+  };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(paymentUrl);
+    if (!checkoutUrl) return;
+    navigator.clipboard.writeText(checkoutUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const previewUrl = checkoutUrl || `drift.to/pay/preview`;
+  const qrValue = depositAddress || previewUrl;
+
   return (
     <>
       <DashboardHeader title="Payment links" subtitle="Create a shareable payment link" />
-
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
           <div className="card p-4 lg:col-span-3">
@@ -40,12 +63,7 @@ export default function PaymentLinksPage() {
               </div>
               <div>
                 <label className="section-label mb-1 block">Description</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                  className="input w-full resize-none"
-                />
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input w-full resize-none" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -58,56 +76,37 @@ export default function PaymentLinksPage() {
                     <option value="USDT">USDT</option>
                     <option value="BTC">BTC</option>
                     <option value="USDC">USDC</option>
+                    <option value="ETH">ETH</option>
                   </select>
                 </div>
               </div>
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <label className="section-label">Expiry</label>
-                  <button
-                    onClick={() => setExpiryEnabled(!expiryEnabled)}
-                    className={`h-4 w-7 rounded-sm transition-colors ${expiryEnabled ? "bg-drift-purple" : "bg-drift-border"}`}
-                  >
-                    <span
-                      className={`block h-3 w-3 rounded-sm bg-white transition-transform ${expiryEnabled ? "translate-x-3.5" : "translate-x-0.5"}`}
-                    />
-                  </button>
-                </div>
-                {expiryEnabled && (
-                  <select value={expiry} onChange={(e) => setExpiry(e.target.value)} className="input w-full">
-                    <option>7 days</option>
-                    <option>14 days</option>
-                    <option>30 days</option>
-                    <option>Never</option>
-                  </select>
-                )}
+                <label className="section-label mb-1 block">Redirect URL (optional)</label>
+                <input type="url" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} className="input w-full" placeholder="https://yoursite.com/success" />
               </div>
-              <div>
-                <label className="section-label mb-1 block">Redirect URL</label>
-                <input type="url" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} className="input w-full" />
-              </div>
-              <button onClick={() => router.push("/pay/abc123")} className="btn-primary w-full py-2">
-                Create link
+              <button onClick={handleCreate} disabled={loading} className="btn-primary w-full py-2">
+                {loading ? "Creating…" : "Create link"}
               </button>
             </div>
           </div>
-
           <div className="card p-4 lg:col-span-2">
             <p className="section-label mb-3">Preview</p>
             <div className="border border-drift-border bg-drift-bg p-4">
               <p className="text-sm font-medium text-white">{name}</p>
               <p className="mt-0.5 text-2xs text-drift-muted">{description}</p>
-              <p className="mt-3 text-xl font-semibold tabular-nums text-white">
-                {amount} {currency}
-              </p>
+              <p className="mt-3 text-xl font-semibold tabular-nums text-white">{amount} {currency}</p>
               <div className="mx-auto mt-4 w-fit border border-drift-border bg-white p-3">
-                <QRCodeSVG value={paymentUrl} size={140} />
+                <QRCodeSVG value={qrValue} size={140} />
               </div>
               <div className="mt-3 flex items-center gap-2">
-                <Link href="/pay/abc123" className="input flex-1 truncate py-1 text-2xs text-drift-muted">
-                  {paymentUrl}
-                </Link>
-                <button onClick={handleCopy} className="btn-secondary flex items-center gap-1">
+                {checkoutUrl ? (
+                  <Link href={checkoutUrl.replace(window.location.origin, "")} className="input flex-1 truncate py-1 text-2xs text-drift-purple">
+                    {checkoutUrl}
+                  </Link>
+                ) : (
+                  <span className="input flex-1 truncate py-1 text-2xs text-drift-muted">{previewUrl}</span>
+                )}
+                <button onClick={handleCopy} disabled={!checkoutUrl} className="btn-secondary flex items-center gap-1">
                   <Icon name="Copy" className="h-3 w-3" />
                   {copied ? "Copied" : "Copy"}
                 </button>

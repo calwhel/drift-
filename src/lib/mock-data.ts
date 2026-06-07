@@ -37,7 +37,7 @@ export interface NavItem {
 }
 
 export const navItems = [
-  { label: "Overview", href: "/dashboard", icon: "LayoutDashboard" },
+  { label: "Overview", href: "/dashboard/overview", icon: "LayoutDashboard" },
   { label: "Transactions", href: "/dashboard/transactions", icon: "ArrowRightLeft" },
   { label: "Payment Links", href: "/dashboard/payment-links", icon: "Link" },
   { label: "Wallets", href: "/dashboard/wallets", icon: "Wallet" },
