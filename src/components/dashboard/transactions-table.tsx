@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { transactions, type Transaction } from "@/lib/mock-data";
 import { CryptoIcon } from "../crypto-icon";
 import { StatusBadge } from "../status-badge";
@@ -59,9 +60,9 @@ export function TransactionsTable({ data: dataProp, limit, showViewAll }: Transa
       </table>
       {showViewAll && (
         <div className="mt-4 text-center">
-          <button className="text-sm font-medium text-drift-purple hover:underline">
+          <Link href="/dashboard/transactions" className="text-sm font-medium text-drift-purple hover:underline">
             View all transactions
-          </button>
+          </Link>
         </div>
       )}
     </div>

@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Icon } from "@/components/icons";
 import { CryptoIcon } from "@/components/crypto-icon";
 
 export default function PaymentLinksPage() {
+  const router = useRouter();
   const [name, setName] = useState("Premium Membership");
   const [description, setDescription] = useState("Access to premium content and features.");
   const [amount, setAmount] = useState("120.00");
@@ -115,7 +118,10 @@ export default function PaymentLinksPage() {
                 />
               </div>
 
-              <button className="w-full rounded-lg bg-drift-purple py-3 text-sm font-semibold text-white transition-colors hover:bg-drift-purple/90">
+              <button
+                onClick={() => router.push("/pay/abc123")}
+                className="w-full rounded-lg bg-drift-purple py-3 text-sm font-semibold text-white transition-colors hover:bg-drift-purple/90"
+              >
                 Create Link
               </button>
             </div>
@@ -133,11 +139,12 @@ export default function PaymentLinksPage() {
                 <QRCodeSVG value={paymentUrl} size={160} />
               </div>
               <div className="mt-4 flex items-center gap-2">
-                <input
-                  readOnly
-                  value={paymentUrl}
-                  className="flex-1 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-xs text-drift-muted"
-                />
+                <Link
+                  href="/pay/abc123"
+                  className="flex-1 truncate rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-xs text-drift-purple hover:underline"
+                >
+                  {paymentUrl}
+                </Link>
                 <button
                   onClick={handleCopy}
                   className="flex items-center gap-1.5 rounded-lg border border-drift-purple px-3 py-2 text-xs font-medium text-drift-purple hover:bg-drift-purple/10"

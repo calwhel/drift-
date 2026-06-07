@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
 import { Icon } from "@/components/icons";
@@ -108,13 +109,14 @@ export default function TransactionsPage() {
           <h3 className="mb-3 text-sm font-semibold text-white">Create New</h3>
           <div className="space-y-2">
             {[
-              { label: "Create Payment Link", icon: "Link", primary: true },
-              { label: "Create Invoice", icon: "FileText", primary: false },
-              { label: "Create Wallet", icon: "Wallet", primary: false },
-              { label: "Add Customer", icon: "Users", primary: false },
+              { label: "Create Payment Link", icon: "Link", primary: true, href: "/dashboard/payment-links" },
+              { label: "Create Invoice", icon: "FileText", primary: false, href: "/dashboard/invoices" },
+              { label: "Create Wallet", icon: "Wallet", primary: false, href: "/dashboard/wallets" },
+              { label: "Add Customer", icon: "Users", primary: false, href: "/dashboard/customers" },
             ].map((item) => (
-              <button
+              <Link
                 key={item.label}
+                href={item.href}
                 className={`flex w-full items-center gap-3 rounded-xl p-3 text-sm font-medium transition-colors ${
                   item.primary
                     ? "bg-drift-purple text-white"
@@ -123,18 +125,24 @@ export default function TransactionsPage() {
               >
                 <Icon name={item.icon as "Link"} className="h-4 w-4" />
                 {item.label}
-              </button>
+              </Link>
             ))}
           </div>
 
           <div className="mt-6">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Recent Links</h3>
-              <button className="text-xs text-drift-purple">View all</button>
+              <Link href="/dashboard/payment-links" className="text-xs text-drift-purple hover:underline">
+                View all
+              </Link>
             </div>
             <div className="space-y-3">
               {recentLinks.map((link) => (
-                <div key={link.id} className="rounded-lg border border-drift-border bg-drift-card p-3">
+                <Link
+                  key={link.id}
+                  href="/pay/abc123"
+                  className="block rounded-lg border border-drift-border bg-drift-card p-3 transition-colors hover:border-drift-purple/30"
+                >
                   <div className="flex items-start gap-2">
                     <Icon name="Link" className="mt-0.5 h-4 w-4 shrink-0 text-drift-purple" />
                     <div className="min-w-0 flex-1">
@@ -146,7 +154,7 @@ export default function TransactionsPage() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>

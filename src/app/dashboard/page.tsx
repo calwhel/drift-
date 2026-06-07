@@ -66,7 +66,7 @@ export default function DashboardOverviewPage() {
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="rounded-xl border border-drift-border bg-drift-card p-5 lg:col-span-2">
             <h2 className="mb-4 text-base font-semibold text-white">Recent Transactions</h2>
-            <TransactionsTable limit={5} />
+            <TransactionsTable limit={5} showViewAll />
           </div>
 
           <div className="space-y-4">
@@ -91,18 +91,19 @@ export default function DashboardOverviewPage() {
               <h3 className="mb-3 text-sm font-semibold text-white">Quick Actions</h3>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: "Create Payment Link", icon: "Link", color: "text-drift-purple" },
-                  { label: "Create Invoice", icon: "FileText", color: "text-blue-400" },
-                  { label: "Manage Wallets", icon: "Wallet", color: "text-drift-green" },
-                  { label: "Add Customer", icon: "Users", color: "text-drift-orange" },
+                  { label: "Create Payment Link", icon: "Link", color: "text-drift-purple", href: "/dashboard/payment-links" },
+                  { label: "Create Invoice", icon: "FileText", color: "text-blue-400", href: "/dashboard/invoices" },
+                  { label: "Manage Wallets", icon: "Wallet", color: "text-drift-green", href: "/dashboard/wallets" },
+                  { label: "Add Customer", icon: "Users", color: "text-drift-orange", href: "/dashboard/customers" },
                 ].map((action) => (
-                  <button
+                  <Link
                     key={action.label}
+                    href={action.href}
                     className="flex flex-col items-center gap-2 rounded-lg border border-drift-border p-3 text-center text-xs text-drift-muted transition-colors hover:bg-drift-card-hover hover:text-white"
                   >
                     <Icon name={action.icon as "Link"} className={`h-5 w-5 ${action.color}`} />
                     {action.label}
-                  </button>
+                  </Link>
                 ))}
               </div>
             </div>

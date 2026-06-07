@@ -27,8 +27,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       )}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-drift-border bg-drift-bg transition-transform lg:static lg:translate-x-0",
-          open ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-drift-border bg-drift-bg transition-transform",
+          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+          "lg:static"
         )}
       >
         <div className="flex h-16 items-center justify-between border-b border-drift-border px-5">

@@ -15,12 +15,13 @@ export default function LandingPage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Logo />
           <div className="hidden items-center gap-8 md:flex">
-            {["Features", "Developers", "Pricing", "Resources"].map((item) => (
-              <a key={item} href="#" className="flex items-center gap-1 text-sm text-drift-muted hover:text-white">
-                {item}
-                {item === "Resources" && <Icon name="ChevronDown" className="h-3.5 w-3.5" />}
-              </a>
-            ))}
+            <a href="#features" className="text-sm text-drift-muted hover:text-white">Features</a>
+            <Link href="/dashboard" className="text-sm text-drift-muted hover:text-white">Developers</Link>
+            <a href="#pricing" className="text-sm text-drift-muted hover:text-white">Pricing</a>
+            <a href="#features" className="flex items-center gap-1 text-sm text-drift-muted hover:text-white">
+              Resources
+              <Icon name="ChevronDown" className="h-3.5 w-3.5" />
+            </a>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/dashboard" className="text-sm text-drift-muted hover:text-white">
@@ -159,7 +160,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="px-4 py-20 sm:px-6 lg:px-8">
+      <section id="features" className="scroll-mt-16 px-4 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl text-center">
           <h2 className="text-3xl font-bold text-white sm:text-4xl">
             Everything you need to manage{" "}
@@ -190,7 +191,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="px-4 pb-20 sm:px-6 lg:px-8">
+      <section id="pricing" className="scroll-mt-16 px-4 pb-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl rounded-2xl border border-drift-border bg-drift-card p-10 text-center shadow-glow">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">
             Ready to accept crypto payments?
