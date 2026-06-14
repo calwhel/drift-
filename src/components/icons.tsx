@@ -45,6 +45,7 @@ import {
   ExternalLink,
   Menu,
   X,
+  ArrowLeft,
 } from "lucide-react";
 
 export const iconMap = {
@@ -94,6 +95,7 @@ export const iconMap = {
   ExternalLink,
   Menu,
   X,
+  ArrowLeft,
 };
 
 export type IconName = keyof typeof iconMap;

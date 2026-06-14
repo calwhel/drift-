@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, settlements, wallets } from "../db";
 import { derivePrivateKey } from "./derive";
+import { getPlatformFeeAddress } from "../platform-wallets";
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -16,11 +17,11 @@ export async function queueSettlements(
   const [wallet] = await db
     .select()
     .from(wallets)
-    .where(eq(wallets.userId, userId))
+    .where(and(eq(wallets.userId, userId), eq(wallets.currency, currency)))
     .limit(1);
 
   const merchantAddress = wallet?.address;
-  const feeWallet = process.env.PLATFORM_FEE_WALLET ?? process.env.DEFAULT_HOLDING_WALLET;
+  const feeWallet = await getPlatformFeeAddress(currency, network);
 
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
     await db.insert(settlements).values({

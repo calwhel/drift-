@@ -59,6 +59,7 @@ export const authOptions: NextAuthOptions = {
             id: user.id,
             email: user.email,
             name: user.businessName,
+            isAdmin: user.isAdmin,
           };
         } catch (err) {
           console.error("Auth authorize error:", err);
@@ -73,6 +74,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
+        token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
       }
       return token;
     },
@@ -81,6 +83,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
         session.user.name = token.name as string;
+        session.user.isAdmin = token.isAdmin === true;
       }
       return session;
     },
@@ -117,4 +120,12 @@ export async function requireUser() {
     throw new Error("Unauthorized");
   }
   return session.user;
+}
+
+export async function requireAdmin() {
+  const user = await requireUser();
+  if (!user.isAdmin) {
+    throw new Error("Forbidden");
+  }
+  return user;
 }

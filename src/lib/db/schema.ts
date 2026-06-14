@@ -30,6 +30,7 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").notNull().default(false),
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").notNull().default(false),
+  isAdmin: boolean("is_admin").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -251,6 +252,21 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const platformWallets = pgTable(
+  "platform_wallets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    currency: varchar("currency", { length: 20 }).notNull(),
+    network: varchar("network", { length: 50 }).notNull(),
+    address: text("address").notNull(),
+    label: varchar("label", { length: 100 }),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("platform_wallet_currency_network").on(t.currency, t.network)]
+);
+
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -272,3 +288,4 @@ export type Organization = typeof organizations.$inferSelect;
 export type Withdrawal = typeof withdrawals.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type PlatformWallet = typeof platformWallets.$inferSelect;
