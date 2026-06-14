@@ -8,11 +8,14 @@ declare module "next-auth" {
       email: string;
       name: string;
       isAdmin: boolean;
+      twoFactorEnabled: boolean;
+      twoFactorVerified: boolean;
     };
   }
 
   interface User {
     isAdmin?: boolean;
+    twoFactorEnabled?: boolean;
   }
 }
 
@@ -20,5 +23,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     isAdmin?: boolean;
+    twoFactorEnabled?: boolean;
+    twoFactorVerified?: boolean;
   }
 }

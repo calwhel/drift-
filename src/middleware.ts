@@ -3,9 +3,16 @@ import { NextResponse } from "next/server";
 
 export default withAuth(
   function middleware(req) {
-    if (req.nextUrl.pathname.startsWith("/admin") && !req.nextauth.token?.isAdmin) {
+    const token = req.nextauth.token;
+
+    if (token?.twoFactorEnabled && !token.twoFactorVerified) {
+      return NextResponse.redirect(new URL("/auth/verify-2fa", req.url));
+    }
+
+    if (req.nextUrl.pathname.startsWith("/admin") && !token?.isAdmin) {
       return NextResponse.redirect(new URL("/dashboard/overview", req.url));
     }
+
     return NextResponse.next();
   },
   {

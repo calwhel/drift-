@@ -21,7 +21,7 @@ export async function GET() {
       businessName: users.businessName,
       isAdmin: users.isAdmin,
       emailVerified: users.emailVerified,
-      totpEnabled: users.totpEnabled,
+      totpEnabled: users.twoFactorEnabled,
       createdAt: users.createdAt,
     })
     .from(users)

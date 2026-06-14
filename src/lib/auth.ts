@@ -60,6 +60,7 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             name: user.businessName,
             isAdmin: user.isAdmin,
+            twoFactorEnabled: user.twoFactorEnabled,
           };
         } catch (err) {
           console.error("Auth authorize error:", err);
@@ -69,13 +70,21 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
         token.isAdmin = (user as { isAdmin?: boolean }).isAdmin ?? false;
+        const twoFactorEnabled = (user as { twoFactorEnabled?: boolean }).twoFactorEnabled ?? false;
+        token.twoFactorEnabled = twoFactorEnabled;
+        token.twoFactorVerified = !twoFactorEnabled;
       }
+
+      if (trigger === "update" && session?.twoFactorVerified === true) {
+        token.twoFactorVerified = true;
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -84,6 +93,8 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email as string;
         session.user.name = token.name as string;
         session.user.isAdmin = token.isAdmin === true;
+        session.user.twoFactorEnabled = token.twoFactorEnabled === true;
+        session.user.twoFactorVerified = token.twoFactorVerified !== false;
       }
       return session;
     },
@@ -126,6 +137,14 @@ export async function requireAdmin() {
   const user = await requireUser();
   if (!user.isAdmin) {
     throw new Error("Forbidden");
+  }
+  return user;
+}
+
+export async function requireTwoFactorVerified() {
+  const user = await requireUser();
+  if (user.twoFactorEnabled && !user.twoFactorVerified) {
+    throw new Error("TwoFactorRequired");
   }
   return user;
 }

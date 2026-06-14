@@ -1,21 +1,25 @@
-import { generateSecret, generateURI, verifySync } from "otplib";
-import { randomBytes } from "crypto";
+import speakeasy from "speakeasy";
+import QRCode from "qrcode";
 
-export function generateTotpSecret(): string {
-  return generateSecret();
+const APP_NAME = "Drift Payment";
+
+export function generateTotpSecret(email: string) {
+  return speakeasy.generateSecret({
+    name: `${APP_NAME} (${email})`,
+    issuer: APP_NAME,
+    length: 20,
+  });
 }
 
-export function getTotpUri(secret: string, email: string): string {
-  return generateURI({ issuer: "Drift Payment", label: email, secret });
+export async function generateQrDataUrl(otpauthUrl: string): Promise<string> {
+  return QRCode.toDataURL(otpauthUrl, { width: 200, margin: 2 });
 }
 
 export function verifyTotp(token: string, secret: string): boolean {
-  const result = verifySync({ token, secret });
-  return result.valid;
-}
-
-export function generateBackupCodes(count = 8): string[] {
-  return Array.from({ length: count }, () =>
-    randomBytes(4).toString("hex").toUpperCase()
-  );
+  return speakeasy.totp.verify({
+    secret,
+    encoding: "base32",
+    token,
+    window: 1,
+  });
 }

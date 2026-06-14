@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { signIn } from "next-auth/react";
+import { useState, Suspense } from "react";
+import { signIn, getSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
@@ -21,15 +21,8 @@ function LoginForm() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (searchParams.get("registered") === "1") {
-      setSuccess("Account created! Sign in with your email and password.");
-    }
-    const authError = searchParams.get("error");
-    if (authError) {
-      setError(ERROR_MESSAGES[authError] ?? ERROR_MESSAGES.Default);
-    }
-  }, [searchParams]);
+  const registered = searchParams.get("registered") === "1";
+  const authError = searchParams.get("error");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +59,12 @@ function LoginForm() {
         return;
       }
 
-      // Full page navigation ensures session cookie is sent to middleware
+      const session = await getSession();
+      if (session?.user?.twoFactorEnabled && !session?.user?.twoFactorVerified) {
+        window.location.href = "/auth/verify-2fa";
+        return;
+      }
+
       window.location.href = res.url ?? "/dashboard/overview";
     } catch (err) {
       setError(
@@ -90,6 +88,11 @@ function LoginForm() {
           <p className="mt-1 text-sm text-drift-muted">Access your Drift Payment dashboard</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {registered && (
+              <p className="rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-sm text-drift-green">
+                Account created! Sign in with your email and password.
+              </p>
+            )}
             {success && (
               <p className="rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-sm text-drift-green">
                 {success}
@@ -98,6 +101,11 @@ function LoginForm() {
             {error && (
               <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
                 {error}
+              </p>
+            )}
+            {authError && !error && (
+              <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+                {ERROR_MESSAGES[authError] ?? ERROR_MESSAGES.Default}
               </p>
             )}
             <div>
