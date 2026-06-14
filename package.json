@@ -10,7 +10,9 @@
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:migrate": "drizzle-kit push --force",
+    "db:studio": "drizzle-kit studio",
+    "start:production": "node scripts/migrate.mjs && next start"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

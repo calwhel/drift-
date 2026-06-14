@@ -3,8 +3,8 @@ builder = "nixpacks"
 buildCommand = "npm run build:deploy"
 
 [deploy]
-startCommand = "npm start"
-healthcheckPath = "/"
+startCommand = "npm run start:production"
+healthcheckPath = "/api/health"
 restartPolicyType = "on_failure"
 
 # Schedule payment polling every minute (Railway cron)
