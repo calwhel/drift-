@@ -2,12 +2,18 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 
+const ERROR_MESSAGES: Record<string, string> = {
+  CredentialsSignin: "Invalid email or password",
+  Configuration: "Server auth misconfiguration — check NEXTAUTH_URL and NEXTAUTH_SECRET",
+  Callback: "Authentication callback failed",
+  Default: "Sign in failed. Please try again.",
+};
+
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,6 +25,10 @@ function LoginForm() {
     if (searchParams.get("registered") === "1") {
       setSuccess("Account created! Sign in with your email and password.");
     }
+    const authError = searchParams.get("error");
+    if (authError) {
+      setError(ERROR_MESSAGES[authError] ?? ERROR_MESSAGES.Default);
+    }
   }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -28,27 +38,26 @@ function LoginForm() {
     setSuccess("");
 
     try {
-      const res = await signIn("credentials", {
+      const signInPromise = signIn("credentials", {
         email: email.trim().toLowerCase(),
         password,
         redirect: false,
+        callbackUrl: "/dashboard/overview",
       });
 
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("Sign in timed out. Please try again.")), 15000)
+      );
+
+      const res = await Promise.race([signInPromise, timeoutPromise]);
+
       if (!res) {
-        setError("No response from auth server. Check NEXTAUTH_URL and NEXTAUTH_SECRET.");
+        setError("No response from auth server. Check NEXTAUTH_URL is set correctly.");
         return;
       }
 
       if (res.error) {
-        // NextAuth surfaces authorize() errors in res.error
-        const knownErrors: Record<string, string> = {
-          CredentialsSignin: "Invalid email or password",
-          Configuration: "Auth misconfigured — check server environment variables",
-        };
-        setError(
-          knownErrors[res.error] ??
-            `Sign in failed: ${res.error}`
-        );
+        setError(ERROR_MESSAGES[res.error] ?? `Sign in failed: ${res.error}`);
         return;
       }
 
@@ -57,8 +66,8 @@ function LoginForm() {
         return;
       }
 
-      router.push("/dashboard/overview");
-      router.refresh();
+      // Full page navigation ensures session cookie is sent to middleware
+      window.location.href = res.url ?? "/dashboard/overview";
     } catch (err) {
       setError(
         err instanceof Error
@@ -100,6 +109,7 @@ function LoginForm() {
                 className="input w-full"
                 required
                 disabled={loading}
+                autoComplete="email"
               />
             </div>
             <div>
@@ -111,6 +121,7 @@ function LoginForm() {
                 className="input w-full"
                 required
                 disabled={loading}
+                autoComplete="current-password"
               />
             </div>
             <button type="submit" disabled={loading} className="btn-primary w-full py-2">
@@ -132,11 +143,13 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f] text-drift-muted">
-        Loading…
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f] text-drift-muted">
+          Loading…
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

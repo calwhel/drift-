@@ -4,8 +4,12 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, users } from "./db";
 
+const isProduction = process.env.NODE_ENV === "production";
+const useSecureCookies =
+  process.env.NEXTAUTH_URL?.startsWith("https://") ?? isProduction;
+
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: {
     signIn: "/auth/login",
     newUser: "/auth/signup",
@@ -24,11 +28,13 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!process.env.DATABASE_URL) {
-          throw new Error("Server misconfigured: DATABASE_URL is not set");
+          console.error("Auth: DATABASE_URL is not set");
+          return null;
         }
 
         if (!process.env.NEXTAUTH_SECRET) {
-          throw new Error("Server misconfigured: NEXTAUTH_SECRET is not set");
+          console.error("Auth: NEXTAUTH_SECRET is not set");
+          return null;
         }
 
         try {
@@ -56,9 +62,7 @@ export const authOptions: NextAuthOptions = {
           };
         } catch (err) {
           console.error("Auth authorize error:", err);
-          throw new Error(
-            err instanceof Error ? err.message : "Authentication failed"
-          );
+          return null;
         }
       },
     }),
@@ -80,9 +84,27 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      if (new URL(url).origin === baseUrl) return url;
+      return `${baseUrl}/dashboard/overview`;
+    },
+  },
+  cookies: {
+    sessionToken: {
+      name: useSecureCookies
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
-  debug: process.env.NODE_ENV === "development",
+  debug: process.env.AUTH_DEBUG === "true",
 };
 
 export async function getSession() {
