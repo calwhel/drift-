@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+/**
+ * Applies SQL migrations to Neon using @neondatabase/serverless (production-safe).
+ */
+const { readFileSync, existsSync } = require("fs");
+const { join } = require("path");
+const { Pool } = require("@neondatabase/serverless");
+
+const MIGRATION_FILES = ["0000_init.sql", "0001_all_phases.sql"];
+
+function splitStatements(sql) {
+  return sql
+    .replace(/--[^\n]*/g, "")
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function isIgnorableError(message) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("already exists") ||
+    m.includes("duplicate") ||
+    m.includes("multiple primary keys")
+  );
+}
+
+async function main() {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error("[migrate] DATABASE_URL is required");
+    process.exit(1);
+  }
+
+  const pool = new Pool({ connectionString: url });
+  console.log("[migrate] Connecting to Neon PostgreSQL...");
+
+  try {
+    await pool.query("SELECT 1");
+    console.log("[migrate] Connected");
+
+    for (const file of MIGRATION_FILES) {
+      const filePath = join(__dirname, "..", "drizzle", file);
+      if (!existsSync(filePath)) {
+        console.warn(`[migrate] Skipping missing file: ${file}`);
+        continue;
+      }
+
+      console.log(`[migrate] Applying ${file}...`);
+      const content = readFileSync(filePath, "utf8");
+      const statements = splitStatements(content);
+
+      for (const statement of statements) {
+        try {
+          await pool.query(statement);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (isIgnorableError(msg)) {
+            console.log(`[migrate] Skip (exists): ${statement.slice(0, 60)}...`);
+            continue;
+          }
+          console.error(`[migrate] Failed statement: ${statement.slice(0, 120)}`);
+          throw err;
+        }
+      }
+      console.log(`[migrate] Done: ${file}`);
+    }
+
+    console.log("[migrate] All migrations applied successfully");
+  } finally {
+    await pool.end();
+  }
+}
+
+main().catch((err) => {
+  console.error("[migrate] Migration failed:", err.message || err);
+  process.exit(1);
+});

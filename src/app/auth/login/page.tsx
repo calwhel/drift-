@@ -1,38 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("registered") === "1") {
+      setSuccess("Account created! Sign in with your email and password.");
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
 
-    const res = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      const res = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+      });
 
-    setLoading(false);
+      if (!res) {
+        setError("No response from auth server. Check NEXTAUTH_URL and NEXTAUTH_SECRET.");
+        return;
+      }
 
-    if (res?.error) {
-      setError("Invalid email or password");
-      return;
+      if (res.error) {
+        // NextAuth surfaces authorize() errors in res.error
+        const knownErrors: Record<string, string> = {
+          CredentialsSignin: "Invalid email or password",
+          Configuration: "Auth misconfigured — check server environment variables",
+        };
+        setError(
+          knownErrors[res.error] ??
+            `Sign in failed: ${res.error}`
+        );
+        return;
+      }
+
+      if (!res.ok) {
+        setError(`Sign in failed (status ${res.status})`);
+        return;
+      }
+
+      router.push("/dashboard/overview");
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Network error — could not reach the server"
+      );
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/dashboard/overview");
-    router.refresh();
   }
 
   return (
@@ -46,6 +81,11 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-drift-muted">Access your Drift Payment dashboard</p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            {success && (
+              <p className="rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-sm text-drift-green">
+                {success}
+              </p>
+            )}
             {error && (
               <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
                 {error}
@@ -59,6 +99,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="input w-full"
                 required
+                disabled={loading}
               />
             </div>
             <div>
@@ -69,6 +110,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="input w-full"
                 required
+                disabled={loading}
               />
             </div>
             <button type="submit" disabled={loading} className="btn-primary w-full py-2">
@@ -85,5 +127,17 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f] text-drift-muted">
+        Loading…
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

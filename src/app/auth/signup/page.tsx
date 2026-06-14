@@ -1,16 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 
-function parseError(data: { error?: unknown }): string {
-  const err = data.error;
+function parseError(data: unknown): string {
+  if (!data || typeof data !== "object") return "Registration failed";
+  const err = (data as { error?: unknown }).error;
   if (typeof err === "string") return err;
   if (Array.isArray(err)) {
-    return err.map((e) => (typeof e === "object" && e && "message" in e ? String(e.message) : String(e))).join(". ");
+    return err
+      .map((e) =>
+        typeof e === "object" && e && "message" in e ? String(e.message) : String(e)
+      )
+      .join(". ");
   }
   return "Registration failed";
 }
@@ -28,35 +32,40 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, businessName }),
-    });
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          businessName: businessName.trim(),
+        }),
+      });
 
-    const data = await res.json().catch(() => ({}));
+      let data: unknown = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
 
-    if (!res.ok) {
-      setError(parseError(data));
+      if (!res.ok) {
+        setError(parseError(data) || `Registration failed (${res.status})`);
+        return;
+      }
+
+      router.push("/auth/login?registered=1");
+      router.refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Network error — could not reach the server"
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const signInRes = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
-    setLoading(false);
-
-    if (signInRes?.error) {
-      setError("Account created but sign-in failed. Try logging in manually.");
-      return;
-    }
-
-    router.push("/dashboard/overview");
-    router.refresh();
   }
 
   return (
@@ -84,6 +93,7 @@ export default function SignupPage() {
                 className="input w-full"
                 required
                 minLength={2}
+                disabled={loading}
               />
             </div>
             <div>
@@ -94,6 +104,7 @@ export default function SignupPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="input w-full"
                 required
+                disabled={loading}
               />
             </div>
             <div>
@@ -105,6 +116,7 @@ export default function SignupPage() {
                 className="input w-full"
                 minLength={8}
                 required
+                disabled={loading}
               />
               <p className="mt-1 text-2xs text-drift-muted">At least 8 characters</p>
             </div>
