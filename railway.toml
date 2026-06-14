@@ -4,7 +4,8 @@ buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm start"
-healthcheckPath = "/api/health"
+healthcheckPath = "/"
+healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 
 # Schedule payment polling every minute (Railway cron)
