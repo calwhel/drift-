@@ -3,7 +3,8 @@ builder = "nixpacks"
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "npm start"
+preDeployCommand = ["node scripts/migrate-sql.cjs --soft"]
+startCommand = "node scripts/start.cjs"
 healthcheckPath = "/"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
