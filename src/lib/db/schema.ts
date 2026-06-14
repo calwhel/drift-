@@ -115,6 +115,9 @@ export const transactions = pgTable(
     paymentLinkId: uuid("payment_link_id").references(() => paymentLinks.id, {
       onDelete: "set null",
     }),
+    subscriptionId: uuid("subscription_id").references(() => subscriptions.id, {
+      onDelete: "set null",
+    }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -205,24 +208,50 @@ export const invoiceItems = pgTable("invoice_items", {
   amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
 });
 
+export const subscriptionPlans = pgTable("subscription_plans", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
+  currency: varchar("currency", { length: 20 }).notNull().default("USDT"),
+  network: varchar("network", { length: 50 }).notNull().default("TRC20"),
+  interval: varchar("interval", { length: 20 }).notNull().default("month"),
+  shortCode: varchar("short_code", { length: 32 }).notNull().unique(),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const subscriptions = pgTable("subscriptions", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+  planId: uuid("plan_id").references(() => subscriptionPlans.id, { onDelete: "set null" }),
+  customerEmail: varchar("customer_email", { length: 255 }),
   customerName: varchar("customer_name", { length: 255 }),
-  planName: varchar("plan_name", { length: 255 }).notNull(),
+  planName: varchar("plan_name", { length: 255 }),
   amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
   currency: varchar("currency", { length: 20 }).notNull().default("USDT"),
+  network: varchar("network", { length: 50 }).notNull().default("TRC20"),
   interval: varchar("interval", { length: 20 }).notNull().default("month"),
-  status: varchar("status", { length: 20 }).notNull().default("active"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
   paymentLinkId: uuid("payment_link_id").references(() => paymentLinks.id, {
     onDelete: "set null",
   }),
+  depositAddress: text("deposit_address"),
+  derivationIndex: integer("derivation_index"),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
+  pastDueNotified: boolean("past_due_notified").notNull().default(false),
   currentPeriodStart: timestamp("current_period_start", { withTimezone: true }),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  pausedAt: timestamp("paused_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const apiKeys = pgTable("api_keys", {
@@ -317,5 +346,6 @@ export type Organization = typeof organizations.$inferSelect;
 export type Withdrawal = typeof withdrawals.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type PlatformWallet = typeof platformWallets.$inferSelect;
 export type BusinessSettings = typeof businessSettings.$inferSelect;
