@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, users } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { sendWelcomeEmail } from "@/lib/email/send";
 
 const schema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -70,7 +71,11 @@ export async function POST(req: Request) {
         passwordHash,
         businessName: data.businessName.trim(),
       })
-      .returning({ id: users.id, email: users.email });
+      .returning({ id: users.id, email: users.email, businessName: users.businessName });
+
+    sendWelcomeEmail(user.email, user.businessName).catch((err) =>
+      console.error("[email] Welcome email failed:", err)
+    );
 
     return NextResponse.json(
       { id: user.id, email: user.email, message: "Account created successfully" },

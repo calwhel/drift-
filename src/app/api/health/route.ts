@@ -16,6 +16,7 @@ export async function GET() {
     database_url: process.env.DATABASE_URL ? "set" : "missing",
     nextauth_secret: process.env.NEXTAUTH_SECRET ? "set" : "missing",
     nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
+    resend_api_key: process.env.RESEND_API_KEY ? "set" : "missing",
   };
 
   const body: Record<string, unknown> = {
@@ -31,6 +32,11 @@ export async function GET() {
 
   if (!process.env.NEXTAUTH_SECRET) {
     body.error = "NEXTAUTH_SECRET is not configured";
+    return NextResponse.json(body, { status: 200 });
+  }
+
+  if (!process.env.RESEND_API_KEY) {
+    body.error = "RESEND_API_KEY is not configured";
     return NextResponse.json(body, { status: 200 });
   }
 

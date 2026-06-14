@@ -15,6 +15,7 @@ export async function GET() {
       database_url: process.env.DATABASE_URL ? "set" : "missing",
       nextauth_secret: process.env.NEXTAUTH_SECRET ? "set" : "missing",
       nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
+      resend_api_key: process.env.RESEND_API_KEY ? "set" : "missing",
     },
   });
 }
