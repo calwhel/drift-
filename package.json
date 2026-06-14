@@ -5,14 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:deploy": "node scripts/migrate-sql.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:migrate": "node scripts/migrate-sql.mjs",
+    "db:migrate": "node scripts/migrate-sql.cjs",
     "db:studio": "drizzle-kit studio",
-    "start:production": "node scripts/migrate-sql.mjs && next start"
+    "start:production": "node scripts/migrate-sql.cjs && next start"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
