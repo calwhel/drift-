@@ -1,34 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
-import { db, paymentLinks, wallets } from "@/lib/db";
+import { nanoid } from "nanoid";
+import { db, subscriptionPlans, wallets } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
-import { logAudit } from "@/lib/audit";
-import { allocateDepositAddress } from "@/lib/wallet/deposit";
 
 const createSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
+  name: z.string().min(1).max(255),
+  description: z.string().max(1000).optional(),
   amount: z.number().positive(),
-  currency: z.string(),
-  network: z.string().optional(),
+  currency: z.string().min(1),
   wallet_id: z.string().uuid(),
-  expiry: z.string().datetime().optional().nullable(),
-  redirect_url: z.string().url().optional().nullable(),
+  interval: z.enum(["week", "month", "year"]).default("month"),
 });
 
 export async function GET(req: NextRequest) {
   const auth = await authenticateRequest(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const links = await db
+  const plans = await db
     .select()
-    .from(paymentLinks)
-    .where(eq(paymentLinks.userId, auth.userId))
-    .orderBy(desc(paymentLinks.createdAt));
+    .from(subscriptionPlans)
+    .where(eq(subscriptionPlans.userId, auth.userId))
+    .orderBy(desc(subscriptionPlans.createdAt));
 
-  return NextResponse.json(links);
+  return NextResponse.json(
+    plans.map((p) => ({
+      ...p,
+      subscribe_url: `/subscribe/${p.shortCode}`,
+    }))
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -38,7 +39,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const data = createSchema.parse(body);
-
     const currency = data.currency.toUpperCase();
 
     const [wallet] = await db
@@ -53,47 +53,33 @@ export async function POST(req: NextRequest) {
 
     if (wallet.currency !== currency) {
       return NextResponse.json(
-        { error: "Selected wallet currency does not match payment link currency" },
-        { status: 400 }
-      );
-    }
-
-    const network = data.network ?? wallet.network;
-    if (wallet.network !== network) {
-      return NextResponse.json(
-        { error: "Selected wallet network does not match payment link network" },
+        { error: "Wallet currency must match plan currency" },
         { status: 400 }
       );
     }
 
     const shortCode = nanoid(10);
-    const { depositAddress, derivationIndex } = await allocateDepositAddress(currency, network);
 
-    const [link] = await db
-      .insert(paymentLinks)
+    const [plan] = await db
+      .insert(subscriptionPlans)
       .values({
         userId: auth.userId,
-        title: data.title,
-        description: data.description,
+        name: data.name.trim(),
+        description: data.description?.trim() || null,
         amount: String(data.amount),
         currency,
-        network,
-        expiry: data.expiry ? new Date(data.expiry) : null,
-        redirectUrl: data.redirect_url,
+        network: wallet.network,
+        interval: data.interval,
         shortCode,
-        depositAddress,
         walletId: wallet.id,
-        derivationIndex,
         status: "active",
       })
       .returning();
 
-    await logAudit(auth.userId, "payment_link.created", "payment_link", link.id);
-
     return NextResponse.json(
       {
-        ...link,
-        checkout_url: `/pay/${link.shortCode}`,
+        ...plan,
+        subscribe_url: `/subscribe/${plan.shortCode}`,
       },
       { status: 201 }
     );
@@ -102,6 +88,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: err.issues }, { status: 400 });
     }
     console.error(err);
-    return NextResponse.json({ error: "Failed to create payment link" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create subscription plan" }, { status: 500 });
   }
 }
