@@ -5,6 +5,7 @@ import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../const
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
 import { getActiveSubscriptionAddresses, activateSubscriptionAfterPayment } from "../subscriptions/billing";
+import { paymentAmountStatus, shouldAutoCompletePayment } from "../wallet/deposit";
 
 interface DetectedPayment {
   txHash: string;
@@ -288,7 +289,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
     return;
   }
 
-  const [link] = await db
+  const matchingLinks = await db
     .select()
     .from(paymentLinks)
     .where(
@@ -296,8 +297,17 @@ async function processDetectedPayment(payment: DetectedPayment) {
         eq(paymentLinks.depositAddress, payment.depositAddress),
         eq(paymentLinks.status, "active")
       )
-    )
-    .limit(1);
+    );
+
+  let link = matchingLinks[0] ?? null;
+  if (matchingLinks.length > 1) {
+    const amountMatch = matchingLinks.find((l) => {
+      const expected = Number(l.amount);
+      const tolerance = Math.max(expected * 0.01, 0.0001);
+      return Math.abs(expected - payment.amount) <= tolerance;
+    });
+    link = amountMatch ?? matchingLinks[matchingLinks.length - 1];
+  }
 
   if (!link) {
     await processSubscriptionPayment(payment);
@@ -306,16 +316,8 @@ async function processDetectedPayment(payment: DetectedPayment) {
   if (link.expiry && link.expiry < new Date()) return;
 
   const expectedAmount = Number(link.amount);
-  const tolerance = expectedAmount * 0.01;
-  let status = "confirming";
-
-  if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
-    status = "underpaid";
-  } else if (payment.amount > expectedAmount + tolerance) {
-    status = "overpaid";
-  }
-
-  const amount = payment.amount || expectedAmount;
+  const amount = payment.amount > 0 ? payment.amount : expectedAmount;
+  const status = paymentAmountStatus(payment.amount, expectedAmount);
   const { feeAmount, netAmount } = calculateFee(amount);
 
   const [tx] = await db
@@ -337,7 +339,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
   await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
 
   if (
-    (status === "confirming" || status === "overpaid") &&
+    shouldAutoCompletePayment(status) &&
     payment.confirmations >= getRequiredConfirmations(link.currency)
   ) {
     await completeTransaction(tx.id);
@@ -359,16 +361,8 @@ async function processSubscriptionPayment(payment: DetectedPayment) {
   if (!subscription) return;
 
   const expectedAmount = Number(subscription.amount);
-  const tolerance = expectedAmount * 0.01;
-  let status = "confirming";
-
-  if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
-    status = "underpaid";
-  } else if (payment.amount > expectedAmount + tolerance) {
-    status = "overpaid";
-  }
-
-  const amount = payment.amount || expectedAmount;
+  const amount = payment.amount > 0 ? payment.amount : expectedAmount;
+  const status = paymentAmountStatus(payment.amount, expectedAmount);
   const { feeAmount, netAmount } = calculateFee(amount);
 
   const [tx] = await db
@@ -391,7 +385,7 @@ async function processSubscriptionPayment(payment: DetectedPayment) {
   await dispatchWebhooks(subscription.userId, tx.id, "transaction.confirming");
 
   if (
-    (status === "confirming" || status === "overpaid") &&
+    shouldAutoCompletePayment(status) &&
     payment.confirmations >= getRequiredConfirmations(subscription.currency)
   ) {
     await completeTransaction(tx.id);
@@ -406,14 +400,18 @@ async function completeTransaction(transactionId: string) {
     .limit(1);
 
   if (!tx || tx.status === "completed") return;
-  if (tx.status === "underpaid" || tx.status === "failed") return;
+  if (tx.status === "failed") return;
 
   const net = Number(tx.netAmount ?? 0);
   const fee = Number(tx.feeAmount ?? 0);
+  const wasUnderpaid = tx.status === "underpaid";
 
   await db
     .update(transactions)
-    .set({ status: "completed", updatedAt: new Date() })
+    .set({
+      status: wasUnderpaid ? "underpaid" : "completed",
+      updatedAt: new Date(),
+    })
     .where(eq(transactions.id, transactionId));
 
   let wallet: (typeof wallets.$inferSelect) | null = null;

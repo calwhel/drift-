@@ -31,7 +31,10 @@ export async function GET(
     .orderBy(desc(transactions.createdAt))
     .limit(1);
 
-  const paymentStatus = tx?.status ?? (link.status === "paid" ? "completed" : "pending");
+  const paymentStatus =
+    tx?.status === "underpaid" || tx?.status === "completed" || tx?.status === "overpaid"
+      ? "completed"
+      : tx?.status ?? (link.status === "paid" ? "completed" : "pending");
 
   return NextResponse.json({
     status: paymentStatus,

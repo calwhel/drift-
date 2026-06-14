@@ -40,6 +40,7 @@
     "recharts": "^3.8.1",
     "resend": "^6.12.4",
     "speakeasy": "^2.0.0",
+    "tronweb": "^6.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
