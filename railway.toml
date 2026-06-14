@@ -3,7 +3,7 @@ builder = "nixpacks"
 buildCommand = "npm run build"
 
 [deploy]
-preDeployCommand = ["node scripts/migrate-sql.cjs --soft"]
+preDeployCommand = ["node scripts/migrate-sql.cjs --soft", "node scripts/seed-admin.cjs driftpayments@gmail.com --soft"]
 startCommand = "node scripts/start.cjs"
 healthcheckPath = "/"
 healthcheckTimeout = 120
