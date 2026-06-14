@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { DashboardHeader } from "@/components/dashboard/header";
@@ -18,15 +18,27 @@ interface PaymentLinkRow {
   createdAt: string;
 }
 
+interface WalletOption {
+  id: string;
+  currency: string;
+  network: string;
+  address: string;
+  walletType: string;
+  label: string | null;
+}
+
 export default function PaymentLinksPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
+  const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
   const [expiry, setExpiry] = useState("");
   const [links, setLinks] = useState<PaymentLinkRow[]>([]);
+  const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
   const loadLinks = () => {
@@ -36,10 +48,36 @@ export default function PaymentLinksPage() {
       .catch(() => {});
   };
 
-  useEffect(() => { loadLinks(); }, []);
+  useEffect(() => {
+    loadLinks();
+    fetch("/api/wallets")
+      .then((r) => r.json())
+      .then((d) => setWallets(d.wallets ?? []))
+      .catch(() => {});
+  }, []);
+
+  const walletsForCurrency = useMemo(
+    () => wallets.filter((w) => w.currency === currency),
+    [wallets, currency]
+  );
+
+  useEffect(() => {
+    if (walletsForCurrency.length > 0 && !walletsForCurrency.find((w) => w.id === walletId)) {
+      setWalletId(walletsForCurrency[0].id);
+    } else if (walletsForCurrency.length === 0) {
+      setWalletId("");
+    }
+  }, [walletsForCurrency, walletId]);
+
+  const selectedWallet = wallets.find((w) => w.id === walletId);
 
   const handleCreate = async () => {
+    if (!walletId) {
+      setError("Create a wallet for this currency in Wallets first");
+      return;
+    }
     setLoading(true);
+    setError("");
     const res = await fetch("/api/payment-links", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -48,12 +86,17 @@ export default function PaymentLinksPage() {
         description: description || undefined,
         amount: Number(amount),
         currency,
+        wallet_id: walletId,
         redirect_url: redirectUrl || undefined,
         expiry: expiry ? new Date(expiry).toISOString() : undefined,
       }),
     });
+    const data = await res.json();
     setLoading(false);
-    if (!res.ok) return;
+    if (!res.ok) {
+      setError(data.error ?? "Failed to create link");
+      return;
+    }
     setShowCreate(false);
     setName("");
     setDescription("");
@@ -77,6 +120,11 @@ export default function PaymentLinksPage() {
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
         {showCreate && (
           <div className="card mb-4 p-4">
+            {error && (
+              <p className="mb-3 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-xs text-drift-red">
+                {error}
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="space-y-3">
                 <div>
@@ -99,8 +147,29 @@ export default function PaymentLinksPage() {
                       <option value="BTC">BTC</option>
                       <option value="USDC">USDC</option>
                       <option value="ETH">ETH</option>
+                      <option value="SOL">SOL</option>
                     </select>
                   </div>
+                </div>
+                <div>
+                  <label className="section-label mb-1 block">Receive to wallet</label>
+                  {walletsForCurrency.length === 0 ? (
+                    <p className="text-xs text-drift-red">
+                      No {currency} wallet yet.{" "}
+                      <Link href="/dashboard/wallets" className="text-drift-purple hover:underline">
+                        Add one in Wallets
+                      </Link>
+                    </p>
+                  ) : (
+                    <select value={walletId} onChange={(e) => setWalletId(e.target.value)} className="input w-full">
+                      {walletsForCurrency.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.label ?? w.currency} — {w.walletType === "generated" ? "Drift custodial" : "Connected"} (
+                          {w.address.slice(0, 8)}…)
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="section-label mb-1 block">Expiry (optional)</label>
@@ -110,12 +179,25 @@ export default function PaymentLinksPage() {
                   <label className="section-label mb-1 block">Redirect URL (optional)</label>
                   <input type="url" value={redirectUrl} onChange={(e) => setRedirectUrl(e.target.value)} className="input w-full" placeholder="https://yoursite.com/success" />
                 </div>
-                <button onClick={handleCreate} disabled={loading || !name || !amount} className="btn-primary w-full py-2">
+                <button
+                  onClick={handleCreate}
+                  disabled={loading || !name || !amount || !walletId}
+                  className="btn-primary w-full py-2"
+                >
                   {loading ? "Creating…" : "Create link"}
                 </button>
               </div>
-              <div className="flex items-center justify-center border border-drift-border bg-white p-4">
-                <QRCodeSVG value={amount ? `${amount} ${currency}` : "drift"} size={140} />
+              <div className="flex flex-col items-center justify-center border border-drift-border bg-white p-4">
+                {selectedWallet ? (
+                  <>
+                    <QRCodeSVG value={selectedWallet.address} size={140} />
+                    <p className="mt-2 text-center text-2xs text-gray-600">
+                      Payments go to your selected wallet
+                    </p>
+                  </>
+                ) : (
+                  <QRCodeSVG value={amount ? `${amount} ${currency}` : "drift"} size={140} />
+                )}
               </div>
             </div>
           </div>

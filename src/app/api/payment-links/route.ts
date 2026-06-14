@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { db, paymentLinks } from "@/lib/db";
+import { db, paymentLinks, wallets } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
-import { NETWORKS, SupportedCurrency, getHoldingAddress } from "@/lib/constants";
-import { deriveDepositAddress, getNextDerivationIndex } from "@/lib/wallet/derive";
 import { logAudit } from "@/lib/audit";
 
 const createSchema = z.object({
@@ -14,6 +12,7 @@ const createSchema = z.object({
   amount: z.number().positive(),
   currency: z.string(),
   network: z.string().optional(),
+  wallet_id: z.string().uuid(),
   expiry: z.string().datetime().optional().nullable(),
   redirect_url: z.string().url().optional().nullable(),
 });
@@ -40,18 +39,30 @@ export async function POST(req: NextRequest) {
     const data = createSchema.parse(body);
 
     const currency = data.currency.toUpperCase();
-    const network =
-      data.network ??
-      NETWORKS[currency as SupportedCurrency]?.network ??
-      "TRC20";
 
-    const derivationIndex = await getNextDerivationIndex();
+    const [wallet] = await db
+      .select()
+      .from(wallets)
+      .where(and(eq(wallets.id, data.wallet_id), eq(wallets.userId, auth.userId)))
+      .limit(1);
 
-    let depositAddress: string;
-    try {
-      depositAddress = deriveDepositAddress(derivationIndex, currency, network);
-    } catch {
-      depositAddress = getHoldingAddress(currency, network);
+    if (!wallet) {
+      return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
+    }
+
+    if (wallet.currency !== currency) {
+      return NextResponse.json(
+        { error: "Selected wallet currency does not match payment link currency" },
+        { status: 400 }
+      );
+    }
+
+    const network = data.network ?? wallet.network;
+    if (wallet.network !== network) {
+      return NextResponse.json(
+        { error: "Selected wallet network does not match payment link network" },
+        { status: 400 }
+      );
     }
 
     const shortCode = nanoid(10);
@@ -68,8 +79,9 @@ export async function POST(req: NextRequest) {
         expiry: data.expiry ? new Date(data.expiry) : null,
         redirectUrl: data.redirect_url,
         shortCode,
-        depositAddress,
-        derivationIndex,
+        depositAddress: wallet.address,
+        walletId: wallet.id,
+        derivationIndex: null,
         status: "active",
       })
       .returning();

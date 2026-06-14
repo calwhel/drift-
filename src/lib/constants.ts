@@ -1,6 +1,16 @@
 export const FEE_RATE = 0.015;
 export const NET_RATE = 0.985;
 
+export const MERCHANT_WALLET_NETWORKS = [
+  { currency: "USDT", network: "TRC20", label: "USDT (TRC20)" },
+  { currency: "BTC", network: "Bitcoin", label: "Bitcoin" },
+  { currency: "ETH", network: "ERC20", label: "Ethereum (ERC20)" },
+  { currency: "USDC", network: "ERC20", label: "USDC (ERC20)" },
+  { currency: "SOL", network: "Solana", label: "Solana" },
+] as const;
+
+export type WalletType = "connected" | "generated";
+
 export const PLATFORM_WALLET_NETWORKS = [
   { currency: "USDT", network: "TRC20", label: "USDT (TRC20)" },
   { currency: "BTC", network: "Bitcoin", label: "Bitcoin" },

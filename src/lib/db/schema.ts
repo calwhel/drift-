@@ -68,17 +68,24 @@ export const derivationCounter = pgTable("derivation_counter", {
   nextIndex: integer("next_index").notNull().default(1),
 });
 
-export const wallets = pgTable("wallets", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  currency: varchar("currency", { length: 20 }).notNull(),
-  address: text("address").notNull(),
-  network: varchar("network", { length: 50 }).notNull(),
-  balance: numeric("balance", { precision: 20, scale: 8 }).notNull().default("0"),
-  derivationIndex: integer("derivation_index"),
-});
+export const wallets = pgTable(
+  "wallets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    currency: varchar("currency", { length: 20 }).notNull(),
+    address: text("address").notNull(),
+    network: varchar("network", { length: 50 }).notNull(),
+    balance: numeric("balance", { precision: 20, scale: 8 }).notNull().default("0"),
+    derivationIndex: integer("derivation_index"),
+    walletType: varchar("wallet_type", { length: 20 }).notNull().default("connected"),
+    encryptedPrivateKey: text("encrypted_private_key"),
+    label: varchar("label", { length: 100 }),
+  },
+  (t) => [uniqueIndex("wallets_user_currency_network").on(t.userId, t.currency, t.network)]
+);
 
 export const paymentLinks = pgTable("payment_links", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -95,7 +102,8 @@ export const paymentLinks = pgTable("payment_links", {
   redirectUrl: text("redirect_url"),
   shortCode: varchar("short_code", { length: 32 }).notNull().unique(),
   depositAddress: text("deposit_address").notNull(),
-  derivationIndex: integer("derivation_index").notNull(),
+  derivationIndex: integer("derivation_index"),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -138,7 +146,8 @@ export const settlements = pgTable("settlements", {
   currency: varchar("currency", { length: 20 }).notNull(),
   network: varchar("network", { length: 50 }).notNull(),
   toAddress: text("to_address").notNull(),
-  fromDerivationIndex: integer("from_derivation_index").notNull(),
+  fromDerivationIndex: integer("from_derivation_index"),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   txHash: text("tx_hash"),
   error: text("error"),
@@ -156,8 +165,10 @@ export const withdrawals = pgTable("withdrawals", {
   network: varchar("network", { length: 50 }).notNull(),
   toAddress: text("to_address").notNull(),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
+  walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
   txHash: text("tx_hash"),
   feeAmount: numeric("fee_amount", { precision: 20, scale: 8 }),
+  error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

@@ -351,11 +351,29 @@ async function completeTransaction(transactionId: string) {
     .set({ status: "completed", updatedAt: new Date() })
     .where(eq(transactions.id, transactionId));
 
-  const [wallet] = await db
-    .select()
-    .from(wallets)
-    .where(and(eq(wallets.userId, tx.userId), eq(wallets.currency, tx.currency)))
-    .limit(1);
+  let wallet: (typeof wallets.$inferSelect) | null = null;
+
+  if (tx.paymentLinkId) {
+    const [link] = await db
+      .select()
+      .from(paymentLinks)
+      .where(eq(paymentLinks.id, tx.paymentLinkId))
+      .limit(1);
+
+    if (link?.walletId) {
+      const [w] = await db.select().from(wallets).where(eq(wallets.id, link.walletId)).limit(1);
+      wallet = w ?? null;
+    }
+  }
+
+  if (!wallet) {
+    const [w] = await db
+      .select()
+      .from(wallets)
+      .where(and(eq(wallets.userId, tx.userId), eq(wallets.currency, tx.currency)))
+      .limit(1);
+    wallet = w ?? null;
+  }
 
   if (wallet) {
     const newBalance = Number(wallet.balance) + net;
@@ -385,7 +403,8 @@ async function completeTransaction(transactionId: string) {
         tx.network,
         fee,
         net,
-        link.derivationIndex
+        link.derivationIndex,
+        link.walletId
       );
     }
   }

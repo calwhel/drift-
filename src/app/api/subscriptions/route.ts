@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { db, subscriptions, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { deriveDepositAddress, getNextDerivationIndex } from "@/lib/wallet/derive";
+import { getDefaultWalletForCurrency } from "@/lib/wallet/helpers";
 import { NETWORKS, SupportedCurrency } from "@/lib/constants";
 
 const createSchema = z.object({
@@ -41,11 +42,19 @@ export async function POST(req: NextRequest) {
 
     const derivationIndex = await getNextDerivationIndex();
     let depositAddress: string;
-    try {
-      depositAddress = deriveDepositAddress(derivationIndex, currency, network);
-    } catch {
-      const { getHoldingAddress } = await import("@/lib/constants");
-      depositAddress = getHoldingAddress(currency, network);
+    let walletId: string | null = null;
+
+    const userWallet = await getDefaultWalletForCurrency(auth.userId, currency);
+    if (userWallet) {
+      depositAddress = userWallet.address;
+      walletId = userWallet.id;
+    } else {
+      try {
+        depositAddress = deriveDepositAddress(derivationIndex, currency, network);
+      } catch {
+        const { getHoldingAddress } = await import("@/lib/constants");
+        depositAddress = getHoldingAddress(currency, network);
+      }
     }
     const shortCode = nanoid(10);
 
@@ -66,7 +75,8 @@ export async function POST(req: NextRequest) {
         network,
         shortCode,
         depositAddress,
-        derivationIndex,
+        derivationIndex: walletId ? null : derivationIndex,
+        walletId,
         status: "active",
         expiry: periodEnd,
       })

@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, users, wallets } from "@/lib/db";
-import { NETWORKS } from "@/lib/constants";
+import { db, users } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -72,18 +71,6 @@ export async function POST(req: Request) {
         businessName: data.businessName.trim(),
       })
       .returning({ id: users.id, email: users.email });
-
-    // Create default wallets with placeholder addresses (fast, no HD derivation)
-    for (const currency of ["USDT", "BTC", "USDC"] as const) {
-      const cfg = NETWORKS[currency];
-      await db.insert(wallets).values({
-        userId: user.id,
-        currency,
-        network: cfg.network,
-        address: `pending_${currency.toLowerCase()}_${user.id.slice(0, 8)}`,
-        balance: "0",
-      });
-    }
 
     return NextResponse.json(
       { id: user.id, email: user.email, message: "Account created successfully" },

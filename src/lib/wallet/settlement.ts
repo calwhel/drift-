@@ -1,7 +1,8 @@
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, settlements, wallets } from "../db";
-import { derivePrivateKey } from "./derive";
 import { getPlatformFeeAddress } from "../platform-wallets";
+import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
+import { derivePrivateKey } from "./derive";
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -12,32 +13,64 @@ export async function queueSettlements(
   network: string,
   feeAmount: number,
   netAmount: number,
-  derivationIndex: number
+  derivationIndex: number | null,
+  walletId: string | null
 ) {
-  const [wallet] = await db
-    .select()
-    .from(wallets)
-    .where(and(eq(wallets.userId, userId), eq(wallets.currency, currency)))
-    .limit(1);
+  let sourceWallet: typeof wallets.$inferSelect | null = null;
 
-  const merchantAddress = wallet?.address;
+  if (walletId) {
+    const [w] = await db.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
+    sourceWallet = w ?? null;
+  }
+
+  const merchantAddress = sourceWallet?.address;
   const feeWallet = await getPlatformFeeAddress(currency, network);
+  const isGenerated = sourceWallet?.walletType === "generated";
 
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
+    if (isGenerated) {
+      await db.insert(settlements).values({
+        transactionId,
+        userId,
+        type: "merchant_payout",
+        amount: String(netAmount),
+        currency,
+        network,
+        toAddress: merchantAddress,
+        walletId: sourceWallet!.id,
+        fromDerivationIndex: derivationIndex,
+        status: "ledger_settled",
+      });
+    } else {
+      await db.insert(settlements).values({
+        transactionId,
+        userId,
+        type: "merchant_payout",
+        amount: String(netAmount),
+        currency,
+        network,
+        toAddress: merchantAddress,
+        walletId: sourceWallet?.id ?? null,
+        fromDerivationIndex: derivationIndex,
+        status: "ledger_settled",
+      });
+    }
+  }
+
+  if (feeAmount > 0 && feeWallet && isGenerated && sourceWallet?.encryptedPrivateKey) {
     await db.insert(settlements).values({
       transactionId,
       userId,
-      type: "merchant_payout",
-      amount: String(netAmount),
+      type: "platform_fee",
+      amount: String(feeAmount),
       currency,
       network,
-      toAddress: merchantAddress,
+      toAddress: feeWallet,
+      walletId: sourceWallet.id,
       fromDerivationIndex: derivationIndex,
       status: "pending",
     });
-  }
-
-  if (feeAmount > 0 && feeWallet) {
+  } else if (feeAmount > 0 && feeWallet && derivationIndex != null) {
     await db.insert(settlements).values({
       transactionId,
       userId,
@@ -52,7 +85,7 @@ export async function queueSettlements(
   }
 }
 
-async function broadcastErc20(
+async function broadcastErc20FromIndex(
   fromIndex: number,
   toAddress: string,
   amount: number,
@@ -78,8 +111,6 @@ async function broadcastErc20(
 }
 
 export async function processPendingSettlements(): Promise<number> {
-  if (!process.env.MASTER_WALLET_MNEMONIC) return 0;
-
   const pending = await db
     .select()
     .from(settlements)
@@ -91,12 +122,36 @@ export async function processPendingSettlements(): Promise<number> {
     try {
       let txHash: string | null = null;
 
-      if (
+      if (settlement.walletId) {
+        const [wallet] = await db
+          .select()
+          .from(wallets)
+          .where(eq(wallets.id, settlement.walletId))
+          .limit(1);
+
+        const privateKey = getPrivateKeyFromWallet(wallet?.encryptedPrivateKey ?? null);
+        if (!privateKey) {
+          await db
+            .update(settlements)
+            .set({ status: "failed", error: "Missing custodial wallet key" })
+            .where(eq(settlements.id, settlement.id));
+          continue;
+        }
+
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
+      } else if (
         settlement.network === "ERC20" &&
         settlement.currency === "USDC" &&
-        process.env.ETH_RPC_URL
+        process.env.ETH_RPC_URL &&
+        settlement.fromDerivationIndex != null
       ) {
-        txHash = await broadcastErc20(
+        txHash = await broadcastErc20FromIndex(
           settlement.fromDerivationIndex,
           settlement.toAddress,
           Number(settlement.amount),
@@ -107,9 +162,10 @@ export async function processPendingSettlements(): Promise<number> {
       } else if (
         settlement.network === "ERC20" &&
         settlement.currency === "USDT" &&
-        process.env.ETH_RPC_URL
+        process.env.ETH_RPC_URL &&
+        settlement.fromDerivationIndex != null
       ) {
-        txHash = await broadcastErc20(
+        txHash = await broadcastErc20FromIndex(
           settlement.fromDerivationIndex,
           settlement.toAddress,
           Number(settlement.amount),
@@ -118,7 +174,6 @@ export async function processPendingSettlements(): Promise<number> {
           6
         );
       } else if (settlement.network === "TRC20") {
-        // Tron broadcast requires TronWeb; mark completed in ledger-only mode
         await db
           .update(settlements)
           .set({
