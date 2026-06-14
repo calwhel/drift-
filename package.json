@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "prestart": "node scripts/prestart.cjs",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
