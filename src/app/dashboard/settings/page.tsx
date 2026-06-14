@@ -27,6 +27,30 @@ export default function SettingsPage() {
   const [disablePassword, setDisablePassword] = useState("");
   const [disableCode, setDisableCode] = useState("");
 
+  const [brandingBusinessName, setBrandingBusinessName] = useState("");
+  const [brandingDescription, setBrandingDescription] = useState("");
+  const [brandingPrimaryColor, setBrandingPrimaryColor] = useState("#7c3aed");
+  const [brandingBackgroundColor, setBrandingBackgroundColor] = useState("#0a0a0f");
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState<string | null>(null);
+  const [brandingLoading, setBrandingLoading] = useState(false);
+  const [brandingMessage, setBrandingMessage] = useState("");
+  const [brandingError, setBrandingError] = useState("");
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  const loadBranding = () => {
+    fetch("/api/settings/branding")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) return;
+        setBrandingBusinessName(d.businessName ?? "");
+        setBrandingDescription(d.description ?? "");
+        setBrandingPrimaryColor(d.primaryColor ?? "#7c3aed");
+        setBrandingBackgroundColor(d.backgroundColor ?? "#0a0a0f");
+        setBrandingLogoUrl(d.logoUrl ?? null);
+      })
+      .catch(() => {});
+  };
+
   const load2FAStatus = () => {
     fetch("/api/auth/2fa/setup")
       .then((r) => r.json())
@@ -46,7 +70,74 @@ export default function SettingsPage() {
       })
       .catch(() => {});
     load2FAStatus();
+    loadBranding();
   }, []);
+
+  const saveBranding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBrandingLoading(true);
+    setBrandingMessage("");
+    setBrandingError("");
+    try {
+      const res = await fetch("/api/settings/branding", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessName: brandingBusinessName,
+          description: brandingDescription,
+          primaryColor: brandingPrimaryColor,
+          backgroundColor: brandingBackgroundColor,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save branding");
+      setBrandingMessage("Branding saved — your checkout page will use these settings");
+    } catch (err) {
+      setBrandingError(err instanceof Error ? err.message : "Failed to save branding");
+    } finally {
+      setBrandingLoading(false);
+    }
+  };
+
+  const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoUploading(true);
+    setBrandingError("");
+    setBrandingMessage("");
+    try {
+      const formData = new FormData();
+      formData.append("logo", file);
+      const res = await fetch("/api/settings/branding/logo", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to upload logo");
+      setBrandingLogoUrl(data.logoUrl ?? null);
+      setBrandingMessage("Logo uploaded");
+    } catch (err) {
+      setBrandingError(err instanceof Error ? err.message : "Failed to upload logo");
+    } finally {
+      setLogoUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const removeLogo = async () => {
+    setLogoUploading(true);
+    setBrandingError("");
+    try {
+      const res = await fetch("/api/settings/branding/logo", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove logo");
+      setBrandingLogoUrl(null);
+      setBrandingMessage("Logo removed");
+    } catch (err) {
+      setBrandingError(err instanceof Error ? err.message : "Failed to remove logo");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const setup2FA = async () => {
     setTwoFactorLoading(true);
@@ -159,8 +250,171 @@ export default function SettingsPage() {
 
   return (
     <>
-      <DashboardHeader title="Settings" subtitle="Security and team management" />
+      <DashboardHeader title="Settings" subtitle="Branding, security, and team management" />
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
+        <h2 className="section-title mb-4">Branding</h2>
+        <div className="card mb-6 p-4">
+          <h3 className="section-title mb-1">Checkout page appearance</h3>
+          <p className="mb-4 text-xs text-drift-muted">
+            Customize how your payment pages look to customers at{" "}
+            <code className="text-drift-purple">/pay/your-link</code>.
+          </p>
+          <form onSubmit={saveBranding} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="space-y-4">
+              <div>
+                <label className="section-label mb-1 block">Logo</label>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex h-16 w-16 items-center justify-center overflow-hidden rounded border border-drift-border"
+                    style={{ backgroundColor: brandingBackgroundColor }}
+                  >
+                    {brandingLogoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={brandingLogoUrl} alt="Business logo" className="max-h-full max-w-full object-contain p-1" />
+                    ) : (
+                      <span className="text-2xs text-drift-muted">No logo</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="btn-secondary cursor-pointer text-center">
+                      {logoUploading ? "Uploading…" : "Upload logo"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        className="hidden"
+                        onChange={uploadLogo}
+                        disabled={logoUploading || brandingLoading}
+                      />
+                    </label>
+                    {brandingLogoUrl && (
+                      <button
+                        type="button"
+                        onClick={removeLogo}
+                        disabled={logoUploading}
+                        className="btn-secondary text-drift-red"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-1 text-2xs text-drift-muted">PNG, JPEG, WebP, or SVG. Max 512 KB.</p>
+              </div>
+              <div>
+                <label className="section-label mb-1 block">Business name</label>
+                <input
+                  value={brandingBusinessName}
+                  onChange={(e) => setBrandingBusinessName(e.target.value)}
+                  className="input w-full"
+                  placeholder="Your business name"
+                  maxLength={255}
+                  disabled={brandingLoading}
+                />
+              </div>
+              <div>
+                <label className="section-label mb-1 block">Short description</label>
+                <textarea
+                  value={brandingDescription}
+                  onChange={(e) => setBrandingDescription(e.target.value)}
+                  className="input w-full min-h-[72px] resize-y"
+                  placeholder="A brief tagline shown on your checkout page"
+                  maxLength={500}
+                  disabled={brandingLoading}
+                />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="section-label mb-1 block">Primary colour</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={brandingPrimaryColor}
+                    onChange={(e) => setBrandingPrimaryColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-drift-border bg-transparent"
+                    disabled={brandingLoading}
+                  />
+                  <input
+                    value={brandingPrimaryColor}
+                    onChange={(e) => setBrandingPrimaryColor(e.target.value)}
+                    className="input flex-1 font-mono text-xs"
+                    placeholder="#7c3aed"
+                    disabled={brandingLoading}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="section-label mb-1 block">Background colour</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={brandingBackgroundColor}
+                    onChange={(e) => setBrandingBackgroundColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-drift-border bg-transparent"
+                    disabled={brandingLoading}
+                  />
+                  <input
+                    value={brandingBackgroundColor}
+                    onChange={(e) => setBrandingBackgroundColor(e.target.value)}
+                    className="input flex-1 font-mono text-xs"
+                    placeholder="#0a0a0f"
+                    disabled={brandingLoading}
+                  />
+                </div>
+              </div>
+              <div
+                className="rounded-lg border p-4"
+                style={{
+                  backgroundColor: brandingBackgroundColor,
+                  borderColor: `${brandingPrimaryColor}44`,
+                }}
+              >
+                <p className="mb-2 text-2xs font-medium uppercase tracking-wide text-gray-400">Preview</p>
+                <div className="flex items-center gap-2">
+                  {brandingLogoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={brandingLogoUrl} alt="" className="h-8 max-w-[100px] object-contain" />
+                  ) : (
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded text-xs font-semibold text-white"
+                      style={{ backgroundColor: brandingPrimaryColor }}
+                    >
+                      {(brandingBusinessName || "B").charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {brandingBusinessName || "Your business"}
+                    </p>
+                    {brandingDescription && (
+                      <p className="text-2xs text-gray-400">{brandingDescription}</p>
+                    )}
+                  </div>
+                </div>
+                <div
+                  className="mt-3 rounded px-3 py-2 text-center text-xs font-medium text-white"
+                  style={{ backgroundColor: brandingPrimaryColor }}
+                >
+                  Pay now
+                </div>
+              </div>
+              {brandingError && (
+                <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-xs text-drift-red">
+                  {brandingError}
+                </p>
+              )}
+              {brandingMessage && (
+                <p className="rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-xs text-drift-green">
+                  {brandingMessage}
+                </p>
+              )}
+              <button type="submit" disabled={brandingLoading} className="btn-primary w-full">
+                {brandingLoading ? "Saving…" : "Save branding"}
+              </button>
+            </div>
+          </form>
+        </div>
+
         <h2 className="section-title mb-4">Security</h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="card p-4">
