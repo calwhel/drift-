@@ -263,6 +263,24 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const businessSettings = pgTable(
+  "business_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    logoUrl: text("logo_url"),
+    primaryColor: varchar("primary_color", { length: 7 }).notNull().default("#7c3aed"),
+    backgroundColor: varchar("background_color", { length: 7 }).notNull().default("#0a0a0f"),
+    businessName: varchar("business_name", { length: 255 }),
+    description: text("description"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("business_settings_user_id_unique").on(t.userId)]
+);
+
 export const platformWallets = pgTable(
   "platform_wallets",
   {
@@ -300,3 +318,4 @@ export type Withdrawal = typeof withdrawals.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type PlatformWallet = typeof platformWallets.$inferSelect;
+export type BusinessSettings = typeof businessSettings.$inferSelect;

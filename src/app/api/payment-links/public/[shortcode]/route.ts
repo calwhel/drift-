@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, paymentLinks } from "@/lib/db";
+import { getPublicBrandingForUser } from "@/lib/business-settings";
 
 export async function GET(
   _req: Request,
@@ -20,6 +21,8 @@ export async function GET(
     return NextResponse.json({ error: "Payment link expired" }, { status: 410 });
   }
 
+  const branding = await getPublicBrandingForUser(link.userId);
+
   return NextResponse.json({
     title: link.title,
     description: link.description,
@@ -30,5 +33,6 @@ export async function GET(
     redirect_url: link.redirectUrl,
     expiry: link.expiry,
     status: link.status,
+    branding,
   });
 }

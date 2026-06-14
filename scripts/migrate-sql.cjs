@@ -7,7 +7,7 @@ const { readFileSync, existsSync } = require("fs");
 const { join } = require("path");
 const { neon } = require("@neondatabase/serverless");
 
-const MIGRATION_FILES = ["0000_init.sql", "0001_all_phases.sql", "0002_admin_platform_wallets.sql", "0003_two_factor_enabled.sql", "0004_custodial_wallets.sql"];
+const MIGRATION_FILES = ["0000_init.sql", "0001_all_phases.sql", "0002_admin_platform_wallets.sql", "0003_two_factor_enabled.sql", "0004_custodial_wallets.sql", "0006_business_settings.sql"];
 const soft = process.argv.includes("--soft");
 
 function splitStatements(sql) {
