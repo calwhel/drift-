@@ -31,6 +31,20 @@ export default function CheckoutPage() {
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) return;
+
+    const timer = setTimeout(() => {
+      fetch(`/api/payment-links/public/${shortcode}/receipt-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: customerEmail }),
+      }).catch(() => {});
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [customerEmail, shortcode]);
+
+  useEffect(() => {
     fetch(`/api/payment-links/public/${shortcode}`)
       .then(async (r) => {
         if (!r.ok) throw new Error("Not found");

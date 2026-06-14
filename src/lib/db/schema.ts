@@ -104,6 +104,8 @@ export const paymentLinks = pgTable("payment_links", {
   depositAddress: text("deposit_address").notNull(),
   derivationIndex: integer("derivation_index"),
   walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  expiryNotified: boolean("expiry_notified").notNull().default(false),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

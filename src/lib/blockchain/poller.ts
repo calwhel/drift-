@@ -1,9 +1,10 @@
 import { eq, and } from "drizzle-orm";
-import { db, paymentLinks, transactions, wallets } from "../db";
+import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
+import { sendPaymentReceivedEmails } from "../email/send";
 
 interface DetectedPayment {
   txHash: string;
@@ -319,6 +320,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
       txHash: payment.txHash,
       feeAmount: String(feeAmount),
       netAmount: String(netAmount),
+      customerEmail: link.customerEmail,
       confirmations: String(payment.confirmations),
     })
     .returning();
@@ -410,4 +412,37 @@ async function completeTransaction(transactionId: string) {
   }
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");
+
+  const [merchant] = await db
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, tx.userId))
+    .limit(1);
+
+  let linkTitle: string | undefined;
+  if (tx.paymentLinkId) {
+    const [linkRow] = await db
+      .select({ title: paymentLinks.title, customerEmail: paymentLinks.customerEmail })
+      .from(paymentLinks)
+      .where(eq(paymentLinks.id, tx.paymentLinkId))
+      .limit(1);
+    linkTitle = linkRow?.title;
+  }
+
+  const customer =
+    tx.customerEmail ?? "Customer";
+  const customerEmailForReceipt = tx.customerEmail;
+
+  if (merchant?.email) {
+    sendPaymentReceivedEmails(merchant.email, customerEmailForReceipt, {
+      amount: String(tx.amount),
+      currency: tx.currency,
+      network: tx.network,
+      customer,
+      transactionId: tx.id,
+      feeAmount: String(fee),
+      netAmount: String(net),
+      linkTitle,
+    }).catch((err) => console.error("[email] Payment notification failed:", err));
+  }
 }
