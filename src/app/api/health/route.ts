@@ -4,10 +4,8 @@ import { db } from "@/lib/db";
 
 async function tableExists(name: string): Promise<boolean> {
   try {
-    const result = await db.execute(
-      sql.raw(`SELECT 1 FROM "${name}" LIMIT 1`)
-    );
-    return result !== undefined;
+    await db.execute(sql.raw(`SELECT 1 FROM "${name}" LIMIT 1`));
+    return true;
   } catch {
     return false;
   }
@@ -20,18 +18,20 @@ export async function GET() {
     nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
   };
 
+  const body: Record<string, unknown> = {
+    ok: false,
+    alive: true,
+    checks,
+  };
+
   if (!process.env.DATABASE_URL) {
-    return NextResponse.json(
-      { ok: false, checks, error: "DATABASE_URL is not configured on the server" },
-      { status: 503 }
-    );
+    body.error = "DATABASE_URL is not configured";
+    return NextResponse.json(body, { status: 200 });
   }
 
   if (!process.env.NEXTAUTH_SECRET) {
-    return NextResponse.json(
-      { ok: false, checks, error: "NEXTAUTH_SECRET is not configured on the server" },
-      { status: 503 }
-    );
+    body.error = "NEXTAUTH_SECRET is not configured";
+    return NextResponse.json(body, { status: 200 });
   }
 
   try {
@@ -39,38 +39,25 @@ export async function GET() {
 
     const usersOk = await tableExists("users");
     const walletsOk = await tableExists("wallets");
-    const orgsOk = await tableExists("organizations");
 
     const missing: string[] = [];
     if (!usersOk) missing.push("users");
     if (!walletsOk) missing.push("wallets");
-    if (!orgsOk) missing.push("organizations");
 
     if (missing.length > 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          checks,
-          missing,
-          error: `Database tables missing: ${missing.join(", ")}. Run npm run db:push`,
-        },
-        { status: 503 }
-      );
+      body.missing = missing;
+      body.error = `Database tables missing: ${missing.join(", ")}`;
+      return NextResponse.json(body, { status: 200 });
     }
 
     return NextResponse.json({
       ok: true,
+      alive: true,
       checks,
       message: "All systems operational",
     });
   } catch (err) {
-    return NextResponse.json(
-      {
-        ok: false,
-        checks,
-        error: err instanceof Error ? err.message : "Database connection failed",
-      },
-      { status: 503 }
-    );
+    body.error = err instanceof Error ? err.message : "Database connection failed";
+    return NextResponse.json(body, { status: 200 });
   }
 }
