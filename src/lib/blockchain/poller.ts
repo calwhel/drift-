@@ -1,9 +1,10 @@
-import { eq, and } from "drizzle-orm";
-import { db, paymentLinks, transactions, wallets } from "../db";
+import { eq, and, inArray } from "drizzle-orm";
+import { db, paymentLinks, transactions, wallets, subscriptions } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
+import { getActiveSubscriptionAddresses, activateSubscriptionAfterPayment } from "../subscriptions/billing";
 
 interface DetectedPayment {
   txHash: string;
@@ -193,6 +194,13 @@ export async function pollAllNetworks() {
     });
   }
 
+  const subAddresses = await getActiveSubscriptionAddresses();
+  for (const [address, meta] of Array.from(subAddresses.entries())) {
+    if (!addresses.has(address)) {
+      addresses.set(address, meta);
+    }
+  }
+
   const detected: DetectedPayment[] = [];
 
   for (const [address, { currency, network }] of Array.from(addresses.entries())) {
@@ -291,7 +299,10 @@ async function processDetectedPayment(payment: DetectedPayment) {
     )
     .limit(1);
 
-  if (!link) return;
+  if (!link) {
+    await processSubscriptionPayment(payment);
+    return;
+  }
   if (link.expiry && link.expiry < new Date()) return;
 
   const expectedAmount = Number(link.amount);
@@ -333,6 +344,60 @@ async function processDetectedPayment(payment: DetectedPayment) {
   }
 }
 
+async function processSubscriptionPayment(payment: DetectedPayment) {
+  const [subscription] = await db
+    .select()
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.depositAddress, payment.depositAddress),
+        inArray(subscriptions.status, ["pending", "active", "past_due"])
+      )
+    )
+    .limit(1);
+
+  if (!subscription) return;
+
+  const expectedAmount = Number(subscription.amount);
+  const tolerance = expectedAmount * 0.01;
+  let status = "confirming";
+
+  if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
+    status = "underpaid";
+  } else if (payment.amount > expectedAmount + tolerance) {
+    status = "overpaid";
+  }
+
+  const amount = payment.amount || expectedAmount;
+  const { feeAmount, netAmount } = calculateFee(amount);
+
+  const [tx] = await db
+    .insert(transactions)
+    .values({
+      subscriptionId: subscription.id,
+      userId: subscription.userId,
+      amount: String(amount),
+      currency: subscription.currency,
+      network: subscription.network,
+      status,
+      txHash: payment.txHash,
+      feeAmount: String(feeAmount),
+      netAmount: String(netAmount),
+      customerEmail: subscription.customerEmail,
+      confirmations: String(payment.confirmations),
+    })
+    .returning();
+
+  await dispatchWebhooks(subscription.userId, tx.id, "transaction.confirming");
+
+  if (
+    (status === "confirming" || status === "overpaid") &&
+    payment.confirmations >= getRequiredConfirmations(subscription.currency)
+  ) {
+    await completeTransaction(tx.id);
+  }
+}
+
 async function completeTransaction(transactionId: string) {
   const [tx] = await db
     .select()
@@ -362,6 +427,19 @@ async function completeTransaction(transactionId: string) {
 
     if (link?.walletId) {
       const [w] = await db.select().from(wallets).where(eq(wallets.id, link.walletId)).limit(1);
+      wallet = w ?? null;
+    }
+  }
+
+  if (!wallet && tx.subscriptionId) {
+    const [sub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.id, tx.subscriptionId))
+      .limit(1);
+
+    if (sub?.walletId) {
+      const [w] = await db.select().from(wallets).where(eq(wallets.id, sub.walletId)).limit(1);
       wallet = w ?? null;
     }
   }
@@ -406,6 +484,29 @@ async function completeTransaction(transactionId: string) {
         link.derivationIndex,
         link.walletId
       );
+    }
+  }
+
+  if (tx.subscriptionId) {
+    const [sub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.id, tx.subscriptionId))
+      .limit(1);
+
+    if (sub) {
+      await queueSettlements(
+        transactionId,
+        tx.userId,
+        tx.currency,
+        tx.network,
+        fee,
+        net,
+        sub.derivationIndex,
+        sub.walletId
+      );
+
+      await activateSubscriptionAfterPayment(sub.id, transactionId);
     }
   }
 
