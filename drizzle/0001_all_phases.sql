@@ -126,15 +126,11 @@ ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "totp_enabled" boolean DEFAULT fals
 
 ALTER TABLE "wallets" ADD COLUMN IF NOT EXISTS "derivation_index" integer;
 
-ALTER TABLE "payment_links" ADD COLUMN IF NOT EXISTS "derivation_index" integer;
+ALTER TABLE "payment_links" ADD COLUMN IF NOT EXISTS "derivation_index" integer DEFAULT 0;
 ALTER TABLE "payment_links" ADD COLUMN IF NOT EXISTS "paid_at" timestamp with time zone;
 UPDATE "payment_links" SET "derivation_index" = 0 WHERE "derivation_index" IS NULL;
--- Only enforce NOT NULL when table is empty or all rows have derivation_index
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM "payment_links" WHERE "derivation_index" IS NULL) THEN
-    ALTER TABLE "payment_links" ALTER COLUMN "derivation_index" SET NOT NULL;
-  END IF;
-END $$;
+ALTER TABLE "payment_links" ALTER COLUMN "derivation_index" SET DEFAULT 0;
+ALTER TABLE "payment_links" ALTER COLUMN "derivation_index" SET NOT NULL;
 
 ALTER TABLE "api_keys" ADD COLUMN IF NOT EXISTS "scopes" jsonb DEFAULT '["payment_links:write"]';
 
