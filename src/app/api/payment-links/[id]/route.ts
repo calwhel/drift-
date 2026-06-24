@@ -15,15 +15,16 @@ const updateSchema = z.object({
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authenticateRequest(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
 
   const [link] = await db
     .select()
     .from(paymentLinks)
-    .where(and(eq(paymentLinks.id, params.id), eq(paymentLinks.userId, auth.userId)))
+    .where(and(eq(paymentLinks.id, id), eq(paymentLinks.userId, auth.userId)))
     .limit(1);
 
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -32,10 +33,11 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authenticateRequest(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
 
   try {
     const body = await req.json();
@@ -52,7 +54,7 @@ export async function PATCH(
           expiry: data.expiry ? new Date(data.expiry) : null,
         }),
       })
-      .where(and(eq(paymentLinks.id, params.id), eq(paymentLinks.userId, auth.userId)))
+      .where(and(eq(paymentLinks.id, id), eq(paymentLinks.userId, auth.userId)))
       .returning();
 
     if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -69,15 +71,16 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await authenticateRequest(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
 
   const [link] = await db
     .update(paymentLinks)
     .set({ status: "inactive" })
-    .where(and(eq(paymentLinks.id, params.id), eq(paymentLinks.userId, auth.userId)))
+    .where(and(eq(paymentLinks.id, id), eq(paymentLinks.userId, auth.userId)))
     .returning();
 
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });

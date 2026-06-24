@@ -10,7 +10,7 @@
     "build": "next build",
     "prestart": "node scripts/prestart.cjs",
     "start": "next start -H 0.0.0.0",
-    "lint": "next lint",
+    "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "node scripts/migrate-sql.cjs",

@@ -4,12 +4,13 @@ import { db, paymentLinks } from "@/lib/db";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { shortcode: string } }
+  { params }: { params: Promise<{ shortcode: string }> }
 ) {
+  const { shortcode } = await params;
   const [link] = await db
     .select()
     .from(paymentLinks)
-    .where(eq(paymentLinks.shortCode, params.shortcode))
+    .where(eq(paymentLinks.shortCode, shortcode))
     .limit(1);
 
   if (!link || (link.status !== "active" && link.status !== "paid")) {
