@@ -18,6 +18,12 @@ interface Subscription {
   createdAt: string;
 }
 
+function mapStatus(status: string): "Completed" | "Pending" | "Failed" {
+  if (status === "active") return "Completed";
+  if (status === "cancelled") return "Failed";
+  return "Pending";
+}
+
 export default function SubscriptionsPage() {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -55,6 +61,15 @@ export default function SubscriptionsPage() {
     }
   };
 
+  const updateSubscriptionStatus = async (id: string, status: "active" | "cancelled") => {
+    const res = await fetch(`/api/subscriptions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) load();
+  };
+
   return (
     <>
       <DashboardHeader title="Subscriptions" subtitle={`${subs.length} active plans`}>
@@ -89,6 +104,7 @@ export default function SubscriptionsPage() {
                 <th className="px-4 py-2">Amount</th>
                 <th className="px-4 py-2">Interval</th>
                 <th className="px-4 py-2">Status</th>
+                <th className="px-4 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -98,7 +114,26 @@ export default function SubscriptionsPage() {
                   <td className="px-4 py-2.5">{sub.customerEmail}</td>
                   <td className="px-4 py-2.5 tabular-nums">{sub.amount} {sub.currency}</td>
                   <td className="px-4 py-2.5 capitalize">{sub.interval}ly</td>
-                  <td className="px-4 py-2.5"><StatusBadge status={sub.status === "active" ? "Completed" : "Pending"} /></td>
+                  <td className="px-4 py-2.5">
+                    <StatusBadge status={mapStatus(sub.status)} />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {sub.status === "cancelled" ? (
+                      <button
+                        onClick={() => updateSubscriptionStatus(sub.id, "active")}
+                        className="text-2xs text-drift-green hover:underline"
+                      >
+                        Reactivate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => updateSubscriptionStatus(sub.id, "cancelled")}
+                        className="text-2xs text-drift-red hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

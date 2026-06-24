@@ -16,6 +16,16 @@ export async function GET(
   if (!link) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  if (link.status === "inactive") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (link.status === "expired") {
+    return NextResponse.json({
+      status: "expired",
+      link_status: link.status,
+      redirect_url: link.redirectUrl,
+    });
+  }
 
   if (link.expiry && link.expiry < new Date()) {
     return NextResponse.json({

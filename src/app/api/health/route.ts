@@ -21,6 +21,8 @@ export async function GET() {
     cron_secret: process.env.CRON_SECRET ? "set" : "missing",
     trongrid_api_key: process.env.TRONGRID_API_KEY ? "set" : "missing",
     etherscan_api_key: process.env.ETHERSCAN_API_KEY ? "set" : "missing",
+    resend_api_key: process.env.RESEND_API_KEY ? "set" : "missing",
+    resend_from_email: process.env.RESEND_FROM_EMAIL ? "set" : "missing",
   };
   const requiredChecks = [
     "database_url",
@@ -28,6 +30,8 @@ export async function GET() {
     "nextauth_url",
     "wallet_encryption_key",
     "cron_secret",
+    "resend_api_key",
+    "resend_from_email",
   ] as const;
 
   const body: Record<string, unknown> = {
@@ -56,6 +60,7 @@ export async function GET() {
       "organization_members",
       "organizations",
       "team_invitations",
+      "business_settings",
     ];
     const missing: string[] = [];
     for (const table of requiredTables) {

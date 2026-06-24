@@ -17,6 +17,17 @@ interface PaymentLinkData {
   redirect_url: string | null;
   expiry: string | null;
   status: string;
+  customer_email?: string | null;
+  business_name: string;
+  branding: {
+    logo_url: string | null;
+    primary_color: string;
+    background_color: string;
+  };
+}
+
+function sanitizeHexColor(value: string, fallback: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
 }
 
 export default function CheckoutPage() {
@@ -27,6 +38,8 @@ export default function CheckoutPage() {
   const [error, setError] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [emailSaved, setEmailSaved] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -38,6 +51,7 @@ export default function CheckoutPage() {
       })
       .then((data) => {
         setLink(data);
+        setCustomerEmail(data.customer_email ?? "");
         if (data.expiry) {
           const remaining = Math.max(
             0,
@@ -86,6 +100,27 @@ export default function CheckoutPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const saveCustomerEmail = async () => {
+    const trimmed = customerEmail.trim();
+    if (!trimmed) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    setSavingEmail(true);
+    setEmailSaved(false);
+    try {
+      const res = await fetch(`/api/payment-links/public/${shortcode}/customer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer_email: trimmed }),
+      });
+      if (res.ok) {
+        setEmailSaved(true);
+        setTimeout(() => setEmailSaved(false), 2000);
+      }
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-drift-bg text-drift-muted">
@@ -121,11 +156,39 @@ export default function CheckoutPage() {
     );
   }
 
+  if (paymentStatus === "expired") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-drift-bg px-4">
+        <div className="card max-w-sm p-8 text-center">
+          <h1 className="text-lg font-semibold text-white">Payment link expired</h1>
+          <p className="mt-2 text-sm text-drift-muted">
+            This payment link is no longer active. Please request a new link from the merchant.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const primaryColor = sanitizeHexColor(link.branding.primary_color, "#7c3aed");
+  const backgroundColor = sanitizeHexColor(link.branding.background_color, "#0a0a0f");
+
   return (
-    <div className="min-h-screen bg-drift-bg">
+    <div className="min-h-screen" style={{ backgroundColor }}>
       <header className="border-b border-drift-border">
         <div className="mx-auto flex h-11 max-w-5xl items-center justify-between px-4">
-          <Logo size="sm" showSubtitle={false} />
+          <div className="flex items-center gap-2">
+            {link.branding.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={link.branding.logo_url}
+                alt={`${link.business_name} logo`}
+                className="h-7 w-7 rounded object-contain"
+              />
+            ) : (
+              <Logo size="sm" showSubtitle={false} />
+            )}
+            <span className="text-xs font-medium text-white">{link.business_name}</span>
+          </div>
           {timeDisplay && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-drift-muted">Expires in</span>
@@ -157,7 +220,7 @@ export default function CheckoutPage() {
             </ul>
             <div className="mt-4 border-t border-drift-border pt-4">
               <p className="section-label">Amount due</p>
-              <p className="text-lg font-semibold tabular-nums text-white">
+              <p className="text-lg font-semibold tabular-nums text-white" style={{ color: primaryColor }}>
                 {link.amount} {link.currency}
               </p>
             </div>
@@ -167,9 +230,21 @@ export default function CheckoutPage() {
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
+                onBlur={saveCustomerEmail}
                 className="input w-full text-xs"
                 placeholder="you@example.com"
               />
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={saveCustomerEmail}
+                  disabled={savingEmail || !customerEmail}
+                  className="text-2xs text-drift-muted hover:text-white disabled:opacity-60"
+                >
+                  {savingEmail ? "Saving…" : "Save email"}
+                </button>
+                {emailSaved && <span className="text-2xs text-drift-green">Saved</span>}
+              </div>
             </div>
           </div>
 
@@ -219,7 +294,7 @@ export default function CheckoutPage() {
       </main>
 
       <footer className="border-t border-drift-border py-4 text-center text-2xs text-drift-muted">
-        Powered by Drift Payment
+        Powered by Drift Payment for {link.business_name}
       </footer>
     </div>
   );

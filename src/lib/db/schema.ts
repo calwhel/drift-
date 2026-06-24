@@ -63,6 +63,19 @@ export const teamInvitations = pgTable("team_invitations", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const businessSettings = pgTable("business_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" })
+    .unique(),
+  logoUrl: text("logo_url"),
+  primaryColor: varchar("primary_color", { length: 16 }).notNull().default("#7c3aed"),
+  backgroundColor: varchar("background_color", { length: 16 }).notNull().default("#0a0a0f"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const derivationCounter = pgTable("derivation_counter", {
   id: integer("id").primaryKey().default(1),
   nextIndex: integer("next_index").notNull().default(1),
@@ -104,6 +117,7 @@ export const paymentLinks = pgTable("payment_links", {
   depositAddress: text("deposit_address").notNull(),
   derivationIndex: integer("derivation_index"),
   walletId: uuid("wallet_id").references(() => wallets.id, { onDelete: "set null" }),
+  customerEmail: varchar("customer_email", { length: 255 }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -300,3 +314,4 @@ export type Withdrawal = typeof withdrawals.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type PlatformWallet = typeof platformWallets.$inferSelect;
+export type BusinessSettings = typeof businessSettings.$inferSelect;

@@ -28,6 +28,12 @@ export default function SettingsPage() {
   const [showDisable, setShowDisable] = useState(false);
   const [disablePassword, setDisablePassword] = useState("");
   const [disableCode, setDisableCode] = useState("");
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState("");
+  const [brandingPrimaryColor, setBrandingPrimaryColor] = useState("#7c3aed");
+  const [brandingBackgroundColor, setBrandingBackgroundColor] = useState("#0a0a0f");
+  const [brandingLoading, setBrandingLoading] = useState(false);
+  const [brandingMessage, setBrandingMessage] = useState("");
+  const [brandingError, setBrandingError] = useState("");
 
   const load2FAStatus = () => {
     fetch("/api/auth/2fa/setup")
@@ -47,8 +53,44 @@ export default function SettingsPage() {
         setOrgName(d.organization?.name ?? "");
       })
       .catch(() => {});
+    fetch("/api/business-settings")
+      .then((r) => r.json())
+      .then((d) => {
+        setBrandingLogoUrl(d.logo_url ?? "");
+        setBrandingPrimaryColor(d.primary_color ?? "#7c3aed");
+        setBrandingBackgroundColor(d.background_color ?? "#0a0a0f");
+      })
+      .catch(() => {});
     load2FAStatus();
   }, []);
+
+  const saveBranding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBrandingLoading(true);
+    setBrandingMessage("");
+    setBrandingError("");
+    try {
+      const res = await fetch("/api/business-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logo_url: brandingLogoUrl.trim() || null,
+          primary_color: brandingPrimaryColor,
+          background_color: brandingBackgroundColor,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBrandingError(data.error ?? "Failed to save branding settings");
+        return;
+      }
+      setBrandingMessage("Branding settings saved");
+    } catch {
+      setBrandingError("Network error — could not save branding settings");
+    } finally {
+      setBrandingLoading(false);
+    }
+  };
 
   const setup2FA = async () => {
     setTwoFactorLoading(true);
@@ -361,6 +403,54 @@ export default function SettingsPage() {
                 {twoFactorMessage}
               </p>
             )}
+          </div>
+
+          <div className="card p-4 lg:col-span-2">
+            <h3 className="section-title mb-3">Checkout branding</h3>
+            <form onSubmit={saveBranding} className="space-y-3">
+              <div>
+                <label className="section-label mb-1 block">Logo URL (optional)</label>
+                <input
+                  value={brandingLogoUrl}
+                  onChange={(e) => setBrandingLogoUrl(e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="input w-full"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="section-label mb-1 block">Primary colour</label>
+                  <input
+                    type="color"
+                    value={brandingPrimaryColor}
+                    onChange={(e) => setBrandingPrimaryColor(e.target.value)}
+                    className="h-10 w-full cursor-pointer rounded border border-drift-border bg-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="section-label mb-1 block">Background colour</label>
+                  <input
+                    type="color"
+                    value={brandingBackgroundColor}
+                    onChange={(e) => setBrandingBackgroundColor(e.target.value)}
+                    className="h-10 w-full cursor-pointer rounded border border-drift-border bg-transparent"
+                  />
+                </div>
+              </div>
+              {brandingError && (
+                <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-xs text-drift-red">
+                  {brandingError}
+                </p>
+              )}
+              {brandingMessage && (
+                <p className="rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-xs text-drift-green">
+                  {brandingMessage}
+                </p>
+              )}
+              <button type="submit" disabled={brandingLoading} className="btn-primary">
+                {brandingLoading ? "Saving…" : "Save branding"}
+              </button>
+            </form>
           </div>
 
           <div className="card p-4 lg:col-span-2">

@@ -4,6 +4,7 @@ import { pollAllNetworks } from "@/lib/blockchain/poller";
 import { processPendingWebhooks } from "@/lib/webhooks";
 import { processPendingSettlements } from "@/lib/wallet/settlement";
 import { processPendingWithdrawals } from "@/lib/wallet/withdraw";
+import { processRecurringSubscriptions } from "@/lib/subscriptions/processor";
 
 function headerMatchesSecret(header: string | null, expected: string): boolean {
   if (!header) return false;
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const detected = await pollAllNetworks();
+    const subscriptionsProcessed = await processRecurringSubscriptions();
     const settlements = await processPendingSettlements();
     const withdrawalsProcessed = await processPendingWithdrawals();
     await processPendingWebhooks();
@@ -33,6 +35,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       detected,
+      subscriptions: subscriptionsProcessed,
       settlements,
       withdrawals: withdrawalsProcessed,
       timestamp: new Date().toISOString(),

@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, users, organizations, organizationMembers } from "@/lib/db";
+import { sendWelcomeEmail } from "@/lib/email/notifications";
 import { rateLimit } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -106,6 +107,10 @@ export async function POST(req: Request) {
       });
 
       return createdUser;
+    });
+
+    await sendWelcomeEmail({ to: user.email, businessName }).catch((err) => {
+      console.warn("Welcome email failed:", err);
     });
 
     return NextResponse.json(
