@@ -23,7 +23,7 @@ const schema = z
 
 export async function POST(req: NextRequest) {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireUser({ requireTwoFactor: true });
     const body = await req.json();
     const data = schema.parse(body);
 
@@ -59,8 +59,11 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (err instanceof Error && err.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (err instanceof Error && (err.message === "Unauthorized" || err.message === "TwoFactorRequired")) {
+      return NextResponse.json(
+        { error: err.message === "TwoFactorRequired" ? "Two-factor verification required" : "Unauthorized" },
+        { status: err.message === "TwoFactorRequired" ? 403 : 401 }
+      );
     }
     return NextResponse.json({ error: "Failed to change password" }, { status: 500 });
   }

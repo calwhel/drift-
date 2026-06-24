@@ -23,7 +23,7 @@ function isSupportedNetwork(currency: string, network: string) {
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const user = await requireUser({ requireTwoFactor: true });
     const userWallets = await db
       .select({
         id: wallets.id,
@@ -44,14 +44,17 @@ export async function GET() {
       totalBalance,
       supportedNetworks: MERCHANT_WALLET_NETWORKS,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireUser({ requireTwoFactor: true });
     const body = await req.json();
     const data = createSchema.parse(body);
 
@@ -150,6 +153,12 @@ export async function POST(req: NextRequest) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues.map((i) => i.message).join(". ") }, { status: 400 });
     }
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("Wallet create error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to create wallet" },
@@ -160,7 +169,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireUser({ requireTwoFactor: true });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -188,7 +197,10 @@ export async function DELETE(req: NextRequest) {
     await logAudit(user.id, "wallet.deleted", "wallet", id);
 
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

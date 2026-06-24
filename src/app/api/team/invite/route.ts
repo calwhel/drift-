@@ -13,7 +13,7 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireUser({ requireTwoFactor: true });
     const body = await req.json();
     const data = schema.parse(body);
 
@@ -60,13 +60,19 @@ export async function POST(req: NextRequest) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues }, { status: 400 });
     }
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
+    if (err instanceof Error && err.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     return NextResponse.json({ error: "Invite failed" }, { status: 500 });
   }
 }
 
 export async function GET() {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireUser({ requireTwoFactor: true });
     const [user] = await db
       .select()
       .from(users)
@@ -88,7 +94,10 @@ export async function GET() {
       );
 
     return NextResponse.json(invites);
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, users } from "@/lib/db";
+import { db, users, organizations, organizationMembers } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -30,6 +31,16 @@ function formatError(err: unknown): string {
     return msg;
   }
   return "Registration failed";
+}
+
+function generateOrganizationSlug(businessName: string): string {
+  const base = businessName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "business";
+  const suffix = randomBytes(3).toString("hex");
+  return `${base}-${suffix}`.slice(0, 100);
 }
 
 export async function POST(req: Request) {
@@ -63,14 +74,39 @@ export async function POST(req: Request) {
 
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    const [user] = await db
-      .insert(users)
-      .values({
-        email,
-        passwordHash,
-        businessName: data.businessName.trim(),
-      })
-      .returning({ id: users.id, email: users.email });
+    const businessName = data.businessName.trim();
+    const user = await db.transaction(async (tx) => {
+      const [createdUser] = await tx
+        .insert(users)
+        .values({
+          email,
+          passwordHash,
+          businessName,
+        })
+        .returning({ id: users.id, email: users.email });
+
+      const [org] = await tx
+        .insert(organizations)
+        .values({
+          name: businessName,
+          slug: generateOrganizationSlug(businessName),
+          ownerId: createdUser.id,
+        })
+        .returning({ id: organizations.id });
+
+      await tx
+        .update(users)
+        .set({ organizationId: org.id })
+        .where(eq(users.id, createdUser.id));
+
+      await tx.insert(organizationMembers).values({
+        organizationId: org.id,
+        userId: createdUser.id,
+        role: "admin",
+      });
+
+      return createdUser;
+    });
 
     return NextResponse.json(
       { id: user.id, email: user.email, message: "Account created successfully" },

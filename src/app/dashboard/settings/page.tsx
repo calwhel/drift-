@@ -8,6 +8,8 @@ export default function SettingsPage() {
   const [inviteRole, setInviteRole] = useState("member");
   const [members, setMembers] = useState<Array<{ email: string; role: string; businessName: string }>>([]);
   const [orgName, setOrgName] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteError, setInviteError] = useState("");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -116,14 +118,26 @@ export default function SettingsPage() {
   };
 
   const inviteMember = async () => {
-    const res = await fetch("/api/team/invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-    });
-    if (res.ok) {
+    setInviteMessage("");
+    setInviteError("");
+    try {
+      const res = await fetch("/api/team/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError(data.error ?? "Failed to send invitation");
+        return;
+      }
+
+      setInviteMessage(
+        `Invitation sent to ${inviteEmail}${data.invite_url ? ` — Link: ${data.invite_url}` : ""}`
+      );
       setInviteEmail("");
-      setTwoFactorMessage(`Invitation sent to ${inviteEmail}`);
+    } catch {
+      setInviteError("Network error — could not send invitation");
     }
   };
 
@@ -365,6 +379,16 @@ export default function SettingsPage() {
               </select>
               <button onClick={inviteMember} className="btn-primary">Invite</button>
             </div>
+            {inviteError && (
+              <p className="mb-3 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-xs text-drift-red">
+                {inviteError}
+              </p>
+            )}
+            {inviteMessage && (
+              <p className="mb-3 rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-xs text-drift-green">
+                {inviteMessage}
+              </p>
+            )}
             <ul className="space-y-2">
               {members.map((m) => (
                 <li key={m.email} className="flex items-center justify-between rounded border border-drift-border px-3 py-2 text-xs">

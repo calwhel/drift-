@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireUser({ requireTwoFactor: true });
     const [user] = await db
       .select()
       .from(users)
@@ -36,7 +36,10 @@ export async function GET() {
       .where(eq(organizationMembers.organizationId, user.organizationId));
 
     return NextResponse.json({ organization: org, members });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
       {
         ...sub,
         payment_link: `/pay/${link.shortCode}`,
+        subscribe_url: `/subscribe/${link.shortCode}`,
       },
       { status: 201 }
     );
