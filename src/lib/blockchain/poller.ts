@@ -1,9 +1,10 @@
 import { eq, and } from "drizzle-orm";
-import { db, paymentLinks, transactions, wallets } from "../db";
+import { db, paymentLinks, transactions, wallets, users, invoices, subscriptions } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
+import { sendPaymentCompletedEmails, sendPaymentLinkExpiredEmails } from "../email/notifications";
 
 interface DetectedPayment {
   txHash: string;
@@ -183,6 +184,7 @@ export async function pollAllNetworks() {
     .where(eq(paymentLinks.status, "active"));
 
   const now = new Date();
+  await processExpiredPaymentLinks(activeLinks, now);
   const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
 
   const addresses = new Map<string, { currency: string; network: string }>();
@@ -236,6 +238,39 @@ export async function pollAllNetworks() {
   await updateConfirmingTransactions();
 
   return detected.length;
+}
+
+async function processExpiredPaymentLinks(
+  activeLinks: Array<typeof paymentLinks.$inferSelect>,
+  now: Date
+) {
+  const expired = activeLinks.filter((link) => link.expiry && link.expiry <= now);
+
+  for (const link of expired) {
+    await db
+      .update(paymentLinks)
+      .set({ status: "expired" })
+      .where(eq(paymentLinks.id, link.id));
+
+    try {
+      const [merchant] = await db
+        .select({ email: users.email, businessName: users.businessName })
+        .from(users)
+        .where(eq(users.id, link.userId))
+        .limit(1);
+
+      if (!merchant) continue;
+      await sendPaymentLinkExpiredEmails({
+        merchantEmail: merchant.email,
+        merchantName: merchant.businessName,
+        customerEmail: link.customerEmail,
+        title: link.title,
+        shortcode: link.shortCode,
+      });
+    } catch (err) {
+      console.warn("Failed to send link-expired emails:", err);
+    }
+  }
 }
 
 async function updateConfirmingTransactions() {
@@ -319,6 +354,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
       txHash: payment.txHash,
       feeAmount: String(feeAmount),
       netAmount: String(netAmount),
+      customerEmail: link.customerEmail,
       confirmations: String(payment.confirmations),
     })
     .returning();
@@ -345,6 +381,7 @@ async function completeTransaction(transactionId: string) {
 
   const net = Number(tx.netAmount ?? 0);
   const fee = Number(tx.feeAmount ?? 0);
+  let linkedPaymentLink: (typeof paymentLinks.$inferSelect) | null = null;
 
   await db
     .update(transactions)
@@ -359,6 +396,7 @@ async function completeTransaction(transactionId: string) {
       .from(paymentLinks)
       .where(eq(paymentLinks.id, tx.paymentLinkId))
       .limit(1);
+    linkedPaymentLink = link ?? null;
 
     if (link?.walletId) {
       const [w] = await db.select().from(wallets).where(eq(wallets.id, link.walletId)).limit(1);
@@ -389,12 +427,23 @@ async function completeTransaction(transactionId: string) {
       .from(paymentLinks)
       .where(eq(paymentLinks.id, tx.paymentLinkId))
       .limit(1);
+    linkedPaymentLink = link ?? linkedPaymentLink;
 
     if (link) {
       await db
         .update(paymentLinks)
         .set({ status: "paid", paidAt: new Date() })
         .where(eq(paymentLinks.id, link.id));
+
+      await db
+        .update(invoices)
+        .set({ status: "paid" })
+        .where(eq(invoices.paymentLinkId, link.id));
+
+      await db
+        .update(subscriptions)
+        .set({ status: "active" })
+        .where(eq(subscriptions.paymentLinkId, link.id));
 
       await queueSettlements(
         transactionId,
@@ -410,4 +459,42 @@ async function completeTransaction(transactionId: string) {
   }
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");
+
+  try {
+    const [merchant] = await db
+      .select({ email: users.email, businessName: users.businessName })
+      .from(users)
+      .where(eq(users.id, tx.userId))
+      .limit(1);
+
+    if (merchant) {
+      let customerEmail = tx.customerEmail;
+
+      if (!customerEmail && linkedPaymentLink) {
+        const [invoice] = await db
+          .select({ customerEmail: invoices.customerEmail })
+          .from(invoices)
+          .where(eq(invoices.paymentLinkId, linkedPaymentLink.id))
+          .limit(1);
+        const [subscription] = await db
+          .select({ customerEmail: subscriptions.customerEmail })
+          .from(subscriptions)
+          .where(eq(subscriptions.paymentLinkId, linkedPaymentLink.id))
+          .limit(1);
+        customerEmail = linkedPaymentLink.customerEmail ?? invoice?.customerEmail ?? subscription?.customerEmail ?? null;
+      }
+
+      await sendPaymentCompletedEmails({
+        merchantEmail: merchant.email,
+        merchantName: merchant.businessName,
+        customerEmail,
+        amount: tx.amount,
+        currency: tx.currency,
+        txHash: tx.txHash,
+        checkoutShortcode: linkedPaymentLink?.shortCode ?? null,
+      });
+    }
+  } catch (err) {
+    console.warn("Failed to send payment-completed emails:", err);
+  }
 }

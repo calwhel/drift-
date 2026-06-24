@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
         depositAddress,
         derivationIndex: walletId ? null : derivationIndex,
         walletId,
+        customerEmail: data.customer_email,
         status: "active",
         expiry: data.due_date ? new Date(data.due_date) : null,
       })

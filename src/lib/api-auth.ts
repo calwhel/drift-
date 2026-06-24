@@ -33,7 +33,7 @@ export async function authenticateRequest(req: NextRequest) {
   }
 
   try {
-    const user = await requireUser();
+    const user = await requireUser({ requireTwoFactor: true });
     return { userId: user.id, via: "session" as const };
   } catch {
     return null;

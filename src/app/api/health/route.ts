@@ -16,7 +16,23 @@ export async function GET() {
     database_url: process.env.DATABASE_URL ? "set" : "missing",
     nextauth_secret: process.env.NEXTAUTH_SECRET ? "set" : "missing",
     nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
+    wallet_encryption_key:
+      process.env.WALLET_ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET ? "set" : "missing",
+    cron_secret: process.env.CRON_SECRET ? "set" : "missing",
+    trongrid_api_key: process.env.TRONGRID_API_KEY ? "set" : "missing",
+    etherscan_api_key: process.env.ETHERSCAN_API_KEY ? "set" : "missing",
+    resend_api_key: process.env.RESEND_API_KEY ? "set" : "missing",
+    resend_from_email: process.env.RESEND_FROM_EMAIL ? "set" : "missing",
   };
+  const requiredChecks = [
+    "database_url",
+    "nextauth_secret",
+    "nextauth_url",
+    "wallet_encryption_key",
+    "cron_secret",
+    "resend_api_key",
+    "resend_from_email",
+  ] as const;
 
   const body: Record<string, unknown> = {
     ok: false,
@@ -24,30 +40,38 @@ export async function GET() {
     checks,
   };
 
-  if (!process.env.DATABASE_URL) {
-    body.error = "DATABASE_URL is not configured";
-    return NextResponse.json(body, { status: 200 });
-  }
-
-  if (!process.env.NEXTAUTH_SECRET) {
-    body.error = "NEXTAUTH_SECRET is not configured";
-    return NextResponse.json(body, { status: 200 });
+  const missingRequired = requiredChecks.filter((key) => checks[key] !== "set");
+  if (missingRequired.length > 0) {
+    body.error = `Missing required env vars: ${missingRequired.join(", ")}`;
+    return NextResponse.json(body, { status: 503 });
   }
 
   try {
     await db.execute(sql`SELECT 1`);
 
-    const usersOk = await tableExists("users");
-    const walletsOk = await tableExists("wallets");
-
+    const requiredTables = [
+      "users",
+      "wallets",
+      "payment_links",
+      "transactions",
+      "subscriptions",
+      "webhooks",
+      "api_keys",
+      "organization_members",
+      "organizations",
+      "team_invitations",
+      "business_settings",
+    ];
     const missing: string[] = [];
-    if (!usersOk) missing.push("users");
-    if (!walletsOk) missing.push("wallets");
+    for (const table of requiredTables) {
+      const exists = await tableExists(table);
+      if (!exists) missing.push(table);
+    }
 
     if (missing.length > 0) {
       body.missing = missing;
       body.error = `Database tables missing: ${missing.join(", ")}`;
-      return NextResponse.json(body, { status: 200 });
+      return NextResponse.json(body, { status: 503 });
     }
 
     return NextResponse.json({
@@ -58,6 +82,6 @@ export async function GET() {
     });
   } catch (err) {
     body.error = err instanceof Error ? err.message : "Database connection failed";
-    return NextResponse.json(body, { status: 200 });
+    return NextResponse.json(body, { status: 503 });
   }
 }

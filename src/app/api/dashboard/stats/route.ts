@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const user = await requireUser({ requireTwoFactor: true });
 
     const all = await db
       .select()
@@ -54,7 +54,10 @@ export async function GET() {
       paymentMethods: byCurrency,
       recentTransactions: all.slice(0, 10),
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "TwoFactorRequired") {
+      return NextResponse.json({ error: "Two-factor verification required" }, { status: 403 });
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

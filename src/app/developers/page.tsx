@@ -33,8 +33,12 @@ export default function DevelopersPage() {
 {`curl -X POST https://your-app.railway.app/api/payment-links \\
   -H "Authorization: Bearer drift_your_api_key" \\
   -H "Content-Type: application/json" \\
-  -d '{"title":"Order #1234","amount":99.99,"currency":"USDT"}'`}
+  -d '{"title":"Order #1234","amount":99.99,"currency":"USDT","wallet_id":"<wallet-uuid>"}'`}
           </pre>
+          <p className="mt-2 text-sm text-[#9ca3af]">
+            Get a valid <code className="text-[#7c3aed]">wallet_id</code> from{" "}
+            <code className="text-[#7c3aed]">GET /api/wallets</code> first.
+          </p>
         </section>
 
         <section className="mt-8">
@@ -51,6 +55,7 @@ const link = await drift.paymentLinks.create({
   title: "Order #1234",
   amount: 99.99,
   currency: "USDT",
+  wallet_id: "<wallet-uuid>",
 });`}
           </pre>
         </section>

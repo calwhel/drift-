@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
         depositAddress,
         derivationIndex: walletId ? null : derivationIndex,
         walletId,
+        customerEmail: data.customer_email,
         status: "active",
         expiry: periodEnd,
       })
@@ -103,6 +104,7 @@ export async function POST(req: NextRequest) {
       {
         ...sub,
         payment_link: `/pay/${link.shortCode}`,
+        subscribe_url: `/subscribe/${link.shortCode}`,
       },
       { status: 201 }
     );

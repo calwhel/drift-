@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     const message = err instanceof Error ? err.message : "Unauthorized";
     return NextResponse.json(
       { error: message },
-      { status: message === "Forbidden" ? 403 : 401 }
+      { status: message === "Forbidden" || message === "TwoFactorRequired" ? 403 : 401 }
     );
   }
 

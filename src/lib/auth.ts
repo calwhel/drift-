@@ -125,16 +125,23 @@ export async function getSession() {
   return getServerSession(authOptions);
 }
 
-export async function requireUser() {
+interface RequireUserOptions {
+  requireTwoFactor?: boolean;
+}
+
+export async function requireUser(options: RequireUserOptions = {}) {
   const session = await getSession();
   if (!session?.user?.id) {
     throw new Error("Unauthorized");
+  }
+  if (options.requireTwoFactor && session.user.twoFactorEnabled && !session.user.twoFactorVerified) {
+    throw new Error("TwoFactorRequired");
   }
   return session.user;
 }
 
 export async function requireAdmin() {
-  const user = await requireUser();
+  const user = await requireUser({ requireTwoFactor: true });
   if (!user.isAdmin) {
     throw new Error("Forbidden");
   }

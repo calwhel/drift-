@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -14,21 +14,41 @@ interface Withdrawal {
   createdAt: string;
 }
 
+interface WalletOption {
+  id: string;
+  currency: string;
+  network: string;
+  walletType: string;
+  balance: string;
+}
+
 export default function PayoutsPage() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("USDT");
+  const [walletId, setWalletId] = useState("");
   const [toAddress, setToAddress] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     fetch("/api/withdrawals")
       .then((r) => r.json())
       .then(setWithdrawals)
       .catch(() => {});
-  };
 
-  useEffect(() => { load(); }, []);
+    fetch("/api/wallets")
+      .then((r) => r.json())
+      .then((data) => {
+        const generatedWallets = (data.wallets ?? []).filter(
+          (w: WalletOption) => w.walletType === "generated"
+        );
+        setWallets(generatedWallets);
+        setWalletId((current) => current || generatedWallets[0]?.id || "");
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const handleWithdraw = async () => {
     setLoading(true);
@@ -36,8 +56,8 @@ export default function PayoutsPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        wallet_id: walletId,
         amount: Number(amount),
-        currency,
         to_address: toAddress,
       }),
     });
@@ -68,18 +88,29 @@ export default function PayoutsPage() {
                 <input type="text" value={amount} onChange={(e) => setAmount(e.target.value)} className="input w-full" />
               </div>
               <div>
-                <label className="section-label mb-1 block">Currency</label>
-                <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input w-full">
-                  <option value="USDT">USDT</option>
-                  <option value="BTC">BTC</option>
-                  <option value="USDC">USDC</option>
+                <label className="section-label mb-1 block">Wallet</label>
+                <select
+                  value={walletId}
+                  onChange={(e) => setWalletId(e.target.value)}
+                  className="input w-full"
+                >
+                  {wallets.map((wallet) => (
+                    <option key={wallet.id} value={wallet.id}>
+                      {wallet.currency} ({wallet.network}) - Balance: {wallet.balance}
+                    </option>
+                  ))}
                 </select>
+                {wallets.length === 0 && (
+                  <p className="mt-1 text-2xs text-drift-muted">
+                    Create a generated wallet first to enable withdrawals.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="section-label mb-1 block">Destination address</label>
                 <input type="text" value={toAddress} onChange={(e) => setToAddress(e.target.value)} className="input w-full font-mono text-xs" />
               </div>
-              <button onClick={handleWithdraw} disabled={loading || !amount || !toAddress} className="btn-primary w-full py-2">
+              <button onClick={handleWithdraw} disabled={loading || !amount || !toAddress || !walletId} className="btn-primary w-full py-2">
                 {loading ? "Processing…" : "Withdraw"}
               </button>
             </div>
