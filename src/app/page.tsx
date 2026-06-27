@@ -102,10 +102,11 @@ export default function LandingPage() {
 
         {/* Mobile: horizontal scroll */}
         <div className="mt-7 overflow-x-auto px-4 lg:hidden">
-          <div className="flex w-max gap-8 pb-1">
+          <div className="flex w-max gap-7 pb-1">
             {trustedLogos.map((logo) => (
-              <span key={logo} className="shrink-0 text-[14px] font-semibold text-[#4b5563]">
-                {logo}
+              <span key={logo.name} className="flex shrink-0 items-center gap-1.5 text-[14px] font-semibold text-[#4b5563]">
+                <Icon name={logo.icon as "Coins"} className="h-4 w-4" />
+                {logo.name}
               </span>
             ))}
           </div>
@@ -114,8 +115,9 @@ export default function LandingPage() {
         {/* Desktop: exact original */}
         <div className="mx-auto mt-7 hidden w-[1280px] items-center justify-center gap-10 px-8 lg:flex">
           {trustedLogos.map((logo) => (
-            <span key={logo} className="text-[14px] font-semibold text-[#4b5563]">
-              {logo}
+            <span key={logo.name} className="flex items-center gap-2 text-[14px] font-semibold text-[#4b5563]">
+              <Icon name={logo.icon as "Coins"} className="h-4 w-4" />
+              {logo.name}
             </span>
           ))}
         </div>

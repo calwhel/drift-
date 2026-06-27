@@ -1,35 +1,40 @@
 import { cn } from "@/lib/utils";
-import { statsCards } from "@/lib/mock-data";
+import { statsCards, type StatCardData } from "@/lib/mock-data";
+import { Icon, type IconName } from "./icons";
 
-interface StatsRowProps {
-  className?: string;
+const tileClass: Record<StatCardData["color"], string> = {
+  purple: "tile-purple",
+  blue: "tile-blue",
+  green: "tile-green",
+  orange: "tile-orange",
+};
+
+function StatCard({ card }: { card: StatCardData }) {
+  return (
+    <div className="card-elevated p-4">
+      <div className="flex items-center justify-between">
+        <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tileClass[card.color])}>
+          <Icon name={card.icon as IconName} className="h-[18px] w-[18px]" />
+        </div>
+      </div>
+      <p className="mt-3 text-[12px] text-drift-muted">{card.label}</p>
+      <p className="mt-1 text-[22px] font-semibold tracking-tight tabular-nums text-white">{card.value}</p>
+      <div className="mt-1.5 flex items-center gap-1 text-[11px]">
+        <span className={cn("flex items-center gap-0.5 font-medium", card.positive ? "text-drift-green" : "text-drift-red")}>
+          <Icon name={card.positive ? "ArrowUpRight" : "ArrowDownRight"} className="h-3 w-3" />
+          {card.change.replace(/^[+-]/, "")}
+        </span>
+        <span className="text-drift-muted">{card.sub}</span>
+      </div>
+    </div>
+  );
 }
 
-export function StatsRow({ className }: StatsRowProps) {
+export function StatsRow({ className }: { className?: string }) {
   return (
-    <div
-      className={cn(
-        "card flex divide-x divide-drift-border overflow-x-auto",
-        className
-      )}
-    >
+    <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5", className)}>
       {statsCards.map((card) => (
-        <div key={card.label} className="min-w-[140px] flex-1 px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="section-label">{card.label}</span>
-            <span
-              className={cn(
-                "text-2xs tabular-nums",
-                card.positive ? "text-drift-green" : "text-drift-red"
-              )}
-            >
-              {card.change}
-            </span>
-          </div>
-          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-white">
-            {card.value}
-          </p>
-        </div>
+        <StatCard key={card.label} card={card} />
       ))}
     </div>
   );

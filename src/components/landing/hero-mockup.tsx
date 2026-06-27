@@ -16,9 +16,9 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
   const chartBars = [42, 58, 48, 72, 62, 85, 78, 92, 88, 95];
 
   const transactions = [
-    { id: "TXN_8B527", customer: "Sarah J.", amount: "120 USDT", status: "Completed" },
-    { id: "TXN_3A918", customer: "Michael C.", amount: "0.0045 BTC", status: "Completed" },
-    { id: "TXN_7F204", customer: "Emma W.", amount: "250 USDC", status: "Pending" },
+    { id: "TXN_8B527", customer: "Alex Johnson", amount: "120 USDT", status: "Completed" },
+    { id: "TXN_d7e8e", customer: "Block Sol.", amount: "0.0021 BTC", status: "Completed" },
+    { id: "TXN_3a1b2", customer: "Jane Smith", amount: "75.50 USDT", status: "Pending" },
   ];
 
   return (

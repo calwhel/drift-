@@ -1,325 +1,249 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
+import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { WalletBalanceChart } from "@/components/dashboard/wallet-balance-chart";
 import { CryptoIcon } from "@/components/crypto-icon";
-import { MERCHANT_WALLET_NETWORKS } from "@/lib/constants";
+import { Icon, type IconName } from "@/components/icons";
+import { cn } from "@/lib/utils";
+import { wallets, walletQuickActions, recentActivity } from "@/lib/mock-data";
 
-interface WalletRow {
-  id: string;
-  currency: string;
-  network: string;
-  address: string;
-  balance: string;
-  walletType: string;
-  label: string | null;
-}
+const RANGES = ["7D", "30D", "90D", "1Y"];
+
+const networkBadge: Record<string, string> = {
+  TRC20: "bg-[#7c3aed29] text-[#c4b5fd]",
+  Bitcoin: "bg-[#f59e0b29] text-[#fbbf24]",
+  ERC20: "bg-[#3b82f629] text-[#93c5fd]",
+  BEP20: "bg-[#eab30829] text-[#fde047]",
+};
+
+const tileClass: Record<string, string> = {
+  purple: "tile-purple",
+  blue: "tile-blue",
+  green: "tile-green",
+  orange: "tile-orange",
+};
 
 export default function WalletsPage() {
-  const [wallets, setWallets] = useState<WalletRow[]>([]);
-  const [totalBalance, setTotalBalance] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  const [connectAddress, setConnectAddress] = useState<Record<string, string>>({});
-  const [activeNetwork, setActiveNetwork] = useState<string | null>(null);
-  const [withdrawWalletId, setWithdrawWalletId] = useState<string | null>(null);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawAddress, setWithdrawAddress] = useState("");
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
-
-  const load = useCallback(() => {
-    fetch("/api/wallets")
-      .then((r) => r.json())
-      .then((d) => {
-        setWallets(d.wallets ?? []);
-        setTotalBalance(d.totalBalance ?? 0);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const walletForNetwork = (currency: string, network: string) =>
-    wallets.find((w) => w.currency === currency && w.network === network);
-
-  const connectWallet = async (currency: string, network: string) => {
-    const key = `${currency}|${network}`;
-    const address = connectAddress[key]?.trim();
-    if (!address) {
-      setError("Enter a wallet address");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    setSuccess("");
-    try {
-      const res = await fetch("/api/wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "connected", currency, network, address }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to connect wallet");
-      setSuccess(`${currency} wallet connected`);
-      setActiveNetwork(null);
-      setConnectAddress((prev) => ({ ...prev, [key]: "" }));
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect wallet");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateWallet = async (currency: string, network: string) => {
-    setLoading(true);
-    setError("");
-    setSuccess("");
-    try {
-      const res = await fetch("/api/wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "generated", currency, network }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate wallet");
-      setSuccess(`Drift generated a new ${currency} wallet — save your deposit address`);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate wallet");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleWithdraw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!withdrawWalletId) return;
-    setWithdrawLoading(true);
-    setError("");
-    setSuccess("");
-    try {
-      const res = await fetch("/api/withdrawals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet_id: withdrawWalletId,
-          amount: Number(withdrawAmount),
-          to_address: withdrawAddress,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Withdrawal failed");
-      setSuccess("Withdrawal submitted — funds will be sent on-chain");
-      setWithdrawWalletId(null);
-      setWithdrawAmount("");
-      setWithdrawAddress("");
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Withdrawal failed");
-    } finally {
-      setWithdrawLoading(false);
-    }
-  };
-
-  const copyAddress = (address: string) => {
-    navigator.clipboard.writeText(address);
-    setSuccess("Address copied");
-  };
+  const { setOpen } = useSidebar();
+  const [range, setRange] = useState("30D");
 
   return (
     <>
-      <DashboardHeader title="Wallets" subtitle="Connect your own or use Drift-generated custodial wallets" />
-      <main className="flex-1 overflow-y-auto p-4 lg:p-5">
-        {error && (
-          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
-            {error}
-          </p>
-        )}
-        {success && (
-          <p className="mb-4 rounded border border-drift-green/30 bg-drift-green/10 px-3 py-2 text-sm text-drift-green">
-            {success}
-          </p>
-        )}
+      <DashboardHeader
+        title="Wallets"
+        subtitle="Manage all your wallets and view balances."
+        onMenuClick={() => setOpen(true)}
+        actions={
+          <>
+            <button className="flex items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#6d28d9]">
+              <Icon name="Plus" className="h-4 w-4" />
+              <span className="hidden sm:inline">Create Wallet</span>
+            </button>
+            <button className="hidden h-9 w-9 items-center justify-center rounded-lg border border-drift-border bg-drift-card text-drift-muted hover:text-white sm:flex">
+              <Icon name="Sun" className="h-[18px] w-[18px]" />
+            </button>
+          </>
+        }
+      />
 
-        <div className="card mb-4 p-4">
-          <p className="section-label">Total balance</p>
-          <p className="text-xl font-semibold tabular-nums text-white">
-            ${totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
-          <div className="mt-4">
-            <WalletBalanceChart />
-          </div>
-        </div>
-
-        <h2 className="section-title mb-3">Networks</h2>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {MERCHANT_WALLET_NETWORKS.map((net) => {
-            const wallet = walletForNetwork(net.currency, net.network);
-            const key = `${net.currency}|${net.network}`;
-            const isConnecting = activeNetwork === key;
-
-            return (
-              <div key={key} className="card p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <CryptoIcon symbol={net.currency} size="md" />
-                  <div>
-                    <p className="font-medium text-white">{net.label}</p>
-                    <p className="text-2xs text-drift-muted">{net.network}</p>
-                  </div>
+      <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="space-y-5 lg:col-span-2">
+            {/* Total balance */}
+            <div className="card-elevated p-5">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <p className="text-[13px] text-drift-muted">Total Balance</p>
+                  <Icon name="Eye" className="h-3.5 w-3.5 text-drift-muted" />
                 </div>
-
-                {wallet ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-2xs ${
-                          wallet.walletType === "generated"
-                            ? "bg-drift-purple/20 text-drift-purple"
-                            : "bg-drift-hover text-drift-muted"
-                        }`}
-                      >
-                        {wallet.walletType === "generated" ? "Drift custodial" : "Connected"}
-                      </span>
-                      <span className="text-xs text-white tabular-nums">
-                        {Number(wallet.balance).toFixed(4)} {wallet.currency}
-                      </span>
-                    </div>
-                    <div className="rounded border border-drift-border bg-drift-bg p-2">
-                      <p className="break-all font-mono text-2xs text-drift-muted">{wallet.address}</p>
-                      <button
-                        type="button"
-                        onClick={() => copyAddress(wallet.address)}
-                        className="mt-2 text-2xs text-drift-purple hover:underline"
-                      >
-                        Copy address
-                      </button>
-                    </div>
-                    {wallet.walletType === "generated" && (
-                      <button
-                        type="button"
-                        onClick={() => setWithdrawWalletId(wallet.id)}
-                        className="btn-primary w-full"
-                        disabled={Number(wallet.balance) <= 0}
-                      >
-                        Withdraw to external address
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-xs text-drift-muted">
-                      Connect your existing wallet or let Drift generate a custodial wallet for this network.
-                    </p>
-                    {!isConnecting ? (
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <button
-                          type="button"
-                          onClick={() => setActiveNetwork(key)}
-                          className="btn-secondary flex-1"
-                          disabled={loading}
-                        >
-                          Connect own wallet
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => generateWallet(net.currency, net.network)}
-                          className="btn-primary flex-1"
-                          disabled={loading}
-                        >
-                          Generate wallet
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={connectAddress[key] ?? ""}
-                          onChange={(e) =>
-                            setConnectAddress((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                          placeholder="Paste your wallet address"
-                          className="input w-full font-mono text-xs"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setActiveNetwork(null)}
-                            className="btn-secondary flex-1"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => connectWallet(net.currency, net.network)}
-                            className="btn-primary flex-1"
-                            disabled={loading}
-                          >
-                            Save address
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-1 rounded-lg border border-drift-border bg-drift-card p-0.5">
+                  {RANGES.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setRange(r)}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-[11px] font-medium",
+                        range === r ? "bg-[#7c3aed] text-white" : "text-drift-muted hover:text-white"
+                      )}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
               </div>
-            );
-          })}
-        </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-bold tabular-nums text-white">$24,560.00</span>
+                <span className="text-[13px] font-medium text-drift-green">+12.5% vs last month</span>
+              </div>
+              <div className="mt-3">
+                <WalletBalanceChart />
+              </div>
+            </div>
 
-        {withdrawWalletId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-            <div className="card w-full max-w-md p-5">
-              <h3 className="section-title mb-3">Withdraw funds</h3>
-              <p className="mb-4 text-xs text-drift-muted">
-                Send from your Drift custodial wallet to any external address.
-              </p>
-              <form onSubmit={handleWithdraw} className="space-y-3">
-                <div>
-                  <label className="section-label mb-1 block">Amount</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    className="input w-full"
-                    required
-                    disabled={withdrawLoading}
-                  />
+            {/* Wallets table */}
+            <div>
+              <h2 className="mb-3 text-[16px] font-semibold text-white">Your Wallets</h2>
+              <div className="card-elevated overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-left text-[13px]">
+                    <thead>
+                      <tr className="border-b border-drift-border text-[12px] text-drift-muted">
+                        <th className="px-5 py-3 font-medium">Wallet</th>
+                        <th className="px-5 py-3 font-medium">Balance</th>
+                        <th className="px-5 py-3 font-medium">Network</th>
+                        <th className="px-5 py-3 font-medium">Address</th>
+                        <th className="px-5 py-3 text-right font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wallets.map((w) => (
+                        <tr key={w.id} className="border-b border-drift-border/60 last:border-0">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <CryptoIcon symbol={w.symbol} size="md" />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[13px] font-medium text-white">{w.name}</span>
+                                  {w.isPrimary && (
+                                    <span className="rounded bg-[#7c3aed29] px-1.5 py-0.5 text-[10px] font-medium text-[#c4b5fd]">
+                                      Primary
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-drift-muted">{w.subtitle}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-[13px] font-medium tabular-nums text-white">{w.balanceDisplay}</p>
+                            <p className="text-[11px] tabular-nums text-drift-muted">
+                              ${w.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span
+                              className={cn(
+                                "rounded-md px-2 py-0.5 text-[11px] font-medium",
+                                networkBadge[w.network] ?? "bg-white/10 text-drift-muted"
+                              )}
+                            >
+                              {w.network}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[12px] text-drift-muted">{w.addressDisplay}</span>
+                              <button className="text-drift-muted hover:text-white">
+                                <Icon name="Copy" className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <button className="rounded-lg border border-drift-border bg-drift-card px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/5">
+                                Deposit
+                              </button>
+                              <button className="rounded-lg border border-drift-border bg-drift-card px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/5">
+                                Withdraw
+                              </button>
+                              <button className="text-drift-muted hover:text-white">
+                                <Icon name="MoreVertical" className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <label className="section-label mb-1 block">Destination address</label>
-                  <input
-                    type="text"
-                    value={withdrawAddress}
-                    onChange={(e) => setWithdrawAddress(e.target.value)}
-                    className="input w-full font-mono text-xs"
-                    required
-                    disabled={withdrawLoading}
-                  />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setWithdrawWalletId(null)}
-                    className="btn-secondary flex-1"
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={withdrawLoading} className="btn-primary flex-1">
-                    {withdrawLoading ? "Submitting…" : "Withdraw"}
-                  </button>
-                </div>
-              </form>
+                <button className="flex w-full items-center justify-center gap-2 border-t border-dashed border-drift-border py-4 text-[13px] text-drift-muted hover:text-white">
+                  <Icon name="Plus" className="h-4 w-4" />
+                  <span className="font-medium text-white">Create New Wallet</span>
+                  <span>— Add a new wallet to start receiving payments</span>
+                </button>
+              </div>
             </div>
           </div>
-        )}
+
+          {/* Right column */}
+          <div className="space-y-5">
+            <div className="card-elevated p-5">
+              <h3 className="mb-3 text-[15px] font-semibold text-white">Quick Actions</h3>
+              <div className="space-y-2">
+                {walletQuickActions.map((action) => (
+                  <Link
+                    key={action.label}
+                    href={action.href}
+                    className="flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
+                  >
+                    <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tileClass[action.color])}>
+                      <Icon name={action.icon as IconName} className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-medium text-white">{action.label}</span>
+                      <span className="block text-[11px] text-drift-muted">{action.description}</span>
+                    </span>
+                    <Icon name="ChevronRight" className="h-4 w-4 text-drift-muted" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-elevated p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-[15px] font-semibold text-white">Recent Activity</h3>
+                <Link href="/dashboard/transactions" className="text-[12px] text-[#a78bfa] hover:underline">
+                  View all
+                </Link>
+              </div>
+              <div className="space-y-4">
+                {recentActivity.map((a, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 items-center justify-center rounded-full",
+                        a.positive ? "bg-[#22c55e1f] text-[#4ade80]" : "bg-[#ef44441f] text-[#f87171]"
+                      )}
+                    >
+                      <Icon name={a.positive ? "ArrowDownLeft" : "ArrowUpRight"} className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-white">{a.title}</p>
+                      <p className="truncate text-[11px] text-drift-muted">{a.party}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn("text-[13px] font-medium tabular-nums", a.positive ? "text-drift-green" : "text-drift-red")}>
+                        {a.amount}
+                      </p>
+                      <p className="text-[11px] text-drift-muted">{a.date}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-elevated p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl tile-purple">
+                  <Icon name="ShieldCheck" className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-[14px] font-semibold text-white">Your funds are secure</p>
+                  <p className="mt-1 text-[12px] text-drift-muted">
+                    We use industry-leading security to protect your assets.
+                  </p>
+                  <Link href="/developers" className="mt-2 inline-flex items-center gap-1 text-[12px] text-[#a78bfa] hover:underline">
+                    Learn more
+                    <Icon name="ArrowRight" className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </>
   );

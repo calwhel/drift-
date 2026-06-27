@@ -9,66 +9,61 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { revenueData } from "@/lib/mock-data";
 
 interface RevenueChartProps {
-  data?: Array<{ date: string; revenue: string | number }>;
+  data?: Array<{ label: string; value: number }>;
+  height?: number;
 }
 
-export function RevenueChart({ data = [] }: RevenueChartProps) {
-  const chartData = data.map((d) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    revenue: Number(d.revenue),
-  }));
-
-  if (chartData.length === 0) {
-    return (
-      <div className="flex h-[200px] items-center justify-center text-xs text-drift-muted">
-        No revenue data yet
-      </div>
-    );
-  }
-
+export function RevenueChart({ data = revenueData, height = 280 }: RevenueChartProps) {
   return (
-    <div className="h-[200px] min-h-[200px] w-full min-w-0">
+    <div className="w-full min-w-0" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.12} />
+              <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.35} />
               <stop offset="100%" stopColor="#7c3aed" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="2 2" stroke="#1e1e2e" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" vertical={false} />
           <XAxis
-            dataKey="date"
+            dataKey="label"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#9ca3af", fontSize: 10 }}
+            tick={{ fill: "#6b7280", fontSize: 11 }}
+            interval="preserveStartEnd"
+            minTickGap={24}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#9ca3af", fontSize: 10 }}
-            tickFormatter={(v) => `$${v}`}
+            tick={{ fill: "#6b7280", fontSize: 11 }}
+            tickFormatter={(v) => (v === 0 ? "$0" : `$${v / 1000}K`)}
+            domain={[0, 30000]}
+            ticks={[0, 5000, 10000, 20000, 30000]}
+            width={44}
           />
           <Tooltip
             contentStyle={{
-              background: "#111118",
-              border: "1px solid #1e1e2e",
-              borderRadius: "4px",
+              background: "#13131c",
+              border: "1px solid #2a2a38",
+              borderRadius: "8px",
               fontSize: "12px",
               color: "#fff",
             }}
-            formatter={(value) => [`$${value}`, "Revenue"]}
+            formatter={(value) => [`$${Number(value).toLocaleString()}`, "Revenue"]}
+            labelStyle={{ color: "#9ca3af" }}
           />
           <Area
             type="monotone"
-            dataKey="revenue"
-            stroke="#7c3aed"
-            strokeWidth={1.5}
+            dataKey="value"
+            stroke="#a855f7"
+            strokeWidth={2.5}
             fill="url(#revenueGradient)"
-            dot={false}
-            activeDot={{ r: 3, fill: "#7c3aed", stroke: "none" }}
+            dot={{ r: 3, fill: "#a855f7", stroke: "#0a0a0f", strokeWidth: 2 }}
+            activeDot={{ r: 5, fill: "#a855f7", stroke: "#0a0a0f", strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>
