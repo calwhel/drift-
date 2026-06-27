@@ -4,31 +4,17 @@
  * Sets required env vars, then runs `next start` with process.env.PORT.
  */
 const { spawn } = require("child_process");
-const { readFileSync, writeFileSync, existsSync } = require("fs");
+const { syncNextAuthUrl } = require("./resolve-nextauth-url.cjs");
 
 const port = process.env.PORT || "3000";
 process.env.PORT = port;
 process.env.HOSTNAME = "0.0.0.0";
 
-if (!process.env.NEXTAUTH_URL && process.env.RAILWAY_PUBLIC_DOMAIN) {
-  const url = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  process.env.NEXTAUTH_URL = url;
-
-  const envPath = ".env.local";
-  let content = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
-  content = content
-    .split("\n")
-    .filter((line) => !line.startsWith("NEXTAUTH_URL="))
-    .join("\n")
-    .trimEnd();
-  writeFileSync(
-    envPath,
-    content ? `${content}\nNEXTAUTH_URL=${url}\n` : `NEXTAUTH_URL=${url}\n`
-  );
-  console.log(`[start] NEXTAUTH_URL auto-set to ${url}`);
-}
+syncNextAuthUrl("[start]");
+process.env.AUTH_TRUST_HOST = "true";
 
 console.log(`[start] PORT=${port}`);
+console.log(`[start] NEXTAUTH_URL=${process.env.NEXTAUTH_URL ?? "(unset)"}`);
 console.log(`[start] Launching next start -H 0.0.0.0`);
 
 const child = spawn("npx", ["next", "start", "-H", "0.0.0.0"], {

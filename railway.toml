@@ -5,7 +5,7 @@ buildCommand = "npm run build"
 [deploy]
 preDeployCommand = "node scripts/migrate-sql.cjs --soft && node scripts/seed-admin.cjs driftpayments@gmail.com --soft"
 startCommand = "node scripts/start.cjs"
-healthcheckPath = "/"
+healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 

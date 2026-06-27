@@ -61,11 +61,12 @@ function LoginForm() {
 
       const session = await getSession();
       if (session?.user?.twoFactorEnabled && !session?.user?.twoFactorVerified) {
-        window.location.href = "/auth/verify-2fa";
+        window.location.assign("/auth/verify-2fa");
         return;
       }
 
-      window.location.href = res.url ?? "/dashboard/overview";
+      // Always stay on the current host — never follow a stale NEXTAUTH_URL redirect.
+      window.location.assign("/dashboard/overview");
     } catch (err) {
       setError(
         err instanceof Error
