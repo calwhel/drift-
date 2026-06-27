@@ -12,11 +12,14 @@ export interface Transaction {
 export interface Wallet {
   id: string;
   name: string;
+  subtitle: string;
   symbol: string;
   balance: number;
+  balanceDisplay: string;
   usdValue: number;
   network: string;
   address: string;
+  addressDisplay: string;
   isPrimary?: boolean;
   color: string;
 }
@@ -25,6 +28,7 @@ export interface PaymentLink {
   id: string;
   title: string;
   url: string;
+  priceDisplay: string;
   amount: number;
   currency: string;
   date: string;
@@ -51,82 +55,138 @@ export const navItems = [
   { label: "Settings", href: "/dashboard/settings", icon: "Settings" },
 ];
 
-export const statsCards = [
-  { label: "Total Gross", value: "$24,560.00", change: "+12.5%", positive: true, icon: "DollarSign", color: "purple" },
-  { label: "Total Payments", value: "356", change: "+8.2%", positive: true, icon: "CreditCard", color: "blue" },
-  { label: "Completed", value: "342", change: "+9.1%", positive: true, icon: "CheckCircle", color: "green" },
-  { label: "Pending", value: "14", change: "-2.1%", positive: false, icon: "Clock", color: "orange" },
-  { label: "Customers", value: "128", change: "+15.3%", positive: true, icon: "Users", color: "purple" },
+export interface StatCardData {
+  label: string;
+  value: string;
+  change: string;
+  positive: boolean;
+  sub: string;
+  icon: string;
+  color: "purple" | "blue" | "green" | "orange";
+}
+
+export const statsCards: StatCardData[] = [
+  { label: "Total Gross", value: "$24,560.00", change: "+12.5%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "DollarSign", color: "purple" },
+  { label: "Total Payments", value: "356", change: "+8.2%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "CreditCard", color: "blue" },
+  { label: "Completed", value: "342", change: "+9.1%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "CheckCircle", color: "green" },
+  { label: "Pending", value: "14", change: "-2.1%", positive: false, sub: "vs Apr 1 – Apr 30", icon: "Clock", color: "orange" },
+  { label: "Customers", value: "128", change: "+15.3%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "Users", color: "purple" },
 ];
 
 export const revenueData = [
-  { date: "May 1", revenue: 820 },
-  { date: "May 5", revenue: 1100 },
-  { date: "May 10", revenue: 980 },
-  { date: "May 15", revenue: 1450 },
-  { date: "May 20", revenue: 1200 },
-  { date: "May 25", revenue: 1680 },
-  { date: "May 31", revenue: 1920 },
+  { label: "May 1", value: 3200 },
+  { label: "May 3", value: 5400 },
+  { label: "May 6", value: 4800 },
+  { label: "May 9", value: 7600 },
+  { label: "May 11", value: 6900 },
+  { label: "May 14", value: 9800 },
+  { label: "May 16", value: 11200 },
+  { label: "May 19", value: 10400 },
+  { label: "May 21", value: 13800 },
+  { label: "May 24", value: 15600 },
+  { label: "May 26", value: 18200 },
+  { label: "May 29", value: 21400 },
+  { label: "May 31", value: 24560 },
 ];
 
 export const paymentMethodsData = [
   { name: "USDT", value: 60.5, color: "#22c55e" },
   { name: "BTC", value: 25.3, color: "#f59e0b" },
   { name: "USDC", value: 10.2, color: "#3b82f6" },
-  { name: "Others", value: 4.0, color: "#7c3aed" },
+  { name: "Others", value: 4.0, color: "#a855f7" },
 ];
 
 export const transactions: Transaction[] = [
-  { id: "TXN_8B527F102", customer: "Sarah Johnson", amount: 120.0, currency: "USDT", status: "Completed", date: "May 31, 9:41 AM" },
-  { id: "TXN_3A918D204", customer: "Michael Chen", amount: 0.0045, currency: "BTC", status: "Completed", date: "May 31, 8:22 AM" },
-  { id: "TXN_7F204A891", customer: "Emma Williams", amount: 250.0, currency: "USDC", status: "Pending", date: "May 30, 11:15 PM" },
-  { id: "TXN_1C563B772", customer: "James Rodriguez", amount: 89.99, currency: "USDT", status: "Completed", date: "May 30, 6:30 PM" },
-  { id: "TXN_9D847E331", customer: "Lisa Anderson", amount: 500.0, currency: "USDT", status: "Failed", date: "May 30, 3:45 PM" },
-  { id: "TXN_2E691F445", customer: "David Kim", amount: 0.012, currency: "BTC", status: "Completed", date: "May 30, 1:20 PM" },
-  { id: "TXN_5B378A902", customer: "Anna Martinez", amount: 175.0, currency: "USDC", status: "Completed", date: "May 29, 10:55 AM" },
-  { id: "TXN_8A204C118", customer: "Robert Taylor", amount: 320.0, currency: "USDT", status: "Pending", date: "May 29, 9:10 AM" },
-  { id: "TXN_4F917D663", customer: "Jennifer Lee", amount: 45.5, currency: "USDT", status: "Completed", date: "May 28, 7:40 PM" },
-  { id: "TXN_6C285E774", customer: "Chris Brown", amount: 0.008, currency: "BTC", status: "Completed", date: "May 28, 4:15 PM" },
-  { id: "TXN_3D496F885", customer: "Maria Garcia", amount: 199.0, currency: "USDC", status: "Completed", date: "May 28, 2:30 PM" },
-  { id: "TXN_1B607A996", customer: "Thomas Wilson", amount: 75.0, currency: "USDT", status: "Failed", date: "May 27, 11:00 AM" },
+  { id: "TXN_88527F102", customer: "Alex Johnson", amount: 120.0, currency: "USDT", status: "Completed", date: "May 31, 9:41 AM" },
+  { id: "TXN_d7e8e2a7c", customer: "Block Solutions", amount: 0.0021, currency: "BTC", status: "Completed", date: "May 31, 8:23 AM" },
+  { id: "TXN_1c59d7f6e", customer: "Crypto Store", amount: 250.0, currency: "USDC", status: "Completed", date: "May 31, 8:05 AM" },
+  { id: "TXN_3a1b2c3d4", customer: "Jane Smith", amount: 75.5, currency: "USDT", status: "Pending", date: "May 31, 8:03 AM" },
+  { id: "TXN_7f3d6a2b1", customer: "Web3 Devs", amount: 0.0015, currency: "BTC", status: "Completed", date: "May 30, 6:21 PM" },
+  { id: "TXN_9b8a7c6d5", customer: "Digital Agency", amount: 500.0, currency: "USDC", status: "Completed", date: "May 30, 4:11 PM" },
+  { id: "TXN_2c4d6e8f9", customer: "John Carter", amount: 200.0, currency: "USDT", status: "Completed", date: "May 30, 2:38 PM" },
+  { id: "TXN_a1b2c3d4e", customer: "Satoshi Labs", amount: 0.0008, currency: "BTC", status: "Failed", date: "May 30, 1:02 PM" },
+  { id: "TXN_f0e1d2c3b", customer: "NFT Collection", amount: 150.0, currency: "USDC", status: "Completed", date: "May 29, 11:45 AM" },
+  { id: "TXN_4d3c2b1a0", customer: "Mike Wilson", amount: 60.0, currency: "USDT", status: "Completed", date: "May 29, 9:32 AM" },
 ];
 
+export const TRANSACTIONS_TOTAL = 356;
+
 export const wallets: Wallet[] = [
-  { id: "1", name: "USDT Wallet", symbol: "USDT", balance: 14850.5, usdValue: 14850.5, network: "TRC20", address: "TPa7x6h9Q8mR2ygJ6K1b8v5d3f9a2e1c7", isPrimary: true, color: "#22c55e" },
-  { id: "2", name: "Bitcoin Wallet", symbol: "BTC", balance: 0.5123, usdValue: 11430.25, network: "Bitcoin", address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh", color: "#f59e0b" },
-  { id: "3", name: "USDC Wallet", symbol: "USDC", balance: 3250.0, usdValue: 3250.0, network: "ERC20", address: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb", color: "#3b82f6" },
-  { id: "4", name: "Ethereum Wallet", symbol: "ETH", balance: 1.245, usdValue: 2890.0, network: "ERC20", address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", color: "#a78bfa" },
-  { id: "5", name: "BNB Wallet", symbol: "BNB", balance: 12.5, usdValue: 3125.0, network: "BEP20", address: "0x8894E0a0c962CB723c1976a4421c95949bE2D4E3", color: "#f59e0b" },
+  { id: "1", name: "USDT Wallet", subtitle: "Tether USD", symbol: "USDT", balance: 12650, balanceDisplay: "12,650 USDT", usdValue: 12650.0, network: "TRC20", address: "TXd7f9Q8mR2ygJ6K1b8v5d3f9a23a2b1c", addressDisplay: "TXd7f...3a2b1c", isPrimary: true, color: "#22c55e" },
+  { id: "2", name: "BTC Wallet", subtitle: "Bitcoin", symbol: "BTC", balance: 0.5123, balanceDisplay: "0.5123 BTC", usdValue: 11430.25, network: "Bitcoin", address: "bc1q9xy2kgdygjrsqtzq2n0yrf24af3d2e", addressDisplay: "bc1q9...af3d2e", color: "#f59e0b" },
+  { id: "3", name: "USDC Wallet", subtitle: "USD Coin", symbol: "USDC", balance: 350, balanceDisplay: "350.00 USDC", usdValue: 350.0, network: "ERC20", address: "0xA7bF35Cc6634C0532925a3b844Bc9e8e2d4f", addressDisplay: "0xA7bF...8e2d4f", color: "#3b82f6" },
+  { id: "4", name: "ETH Wallet", subtitle: "Ethereum", symbol: "ETH", balance: 1.25, balanceDisplay: "1.2500 ETH", usdValue: 2129.75, network: "ERC20", address: "0xA7bF35Cc6634C0532925a3b844Bc9e8e2d4f", addressDisplay: "0xA7bF...8e2d4f", color: "#8b5cf6" },
+  { id: "5", name: "BNB Wallet", subtitle: "BNB Smart Chain", symbol: "BNB", balance: 5.3, balanceDisplay: "5.3000 BNB", usdValue: 1999.0, network: "BEP20", address: "0xA7bF35Cc6634C0532925a3b844Bc9e8e2d4f", addressDisplay: "0xA7bF...8e2d4f", color: "#eab308" },
 ];
 
 export const walletChartData = [
-  { day: "Mon", balance: 22000 },
-  { day: "Tue", balance: 22500 },
-  { day: "Wed", balance: 21800 },
-  { day: "Thu", balance: 23200 },
-  { day: "Fri", balance: 22800 },
-  { day: "Sat", balance: 24100 },
-  { day: "Sun", balance: 24560 },
+  { day: "Day 1", balance: 21800 },
+  { day: "Day 5", balance: 22400 },
+  { day: "Day 9", balance: 21900 },
+  { day: "Day 13", balance: 22800 },
+  { day: "Day 17", balance: 22300 },
+  { day: "Day 21", balance: 23600 },
+  { day: "Day 25", balance: 23100 },
+  { day: "Day 28", balance: 24100 },
+  { day: "Day 30", balance: 24560 },
 ];
 
 export const recentLinks: PaymentLink[] = [
-  { id: "1", title: "Premium Membership", url: "drift.to/pay/abc123", amount: 120.0, currency: "USDT", date: "May 31, 2024" },
-  { id: "2", title: "Consulting Session", url: "drift.to/pay/def456", amount: 250.0, currency: "USDT", date: "May 30, 2024" },
-  { id: "3", title: "Product Purchase", url: "drift.to/pay/ghi789", amount: 89.99, currency: "USDC", date: "May 29, 2024" },
+  { id: "1", title: "Premium Membership", url: "drift.to/pay/abc123", priceDisplay: "$120.00", amount: 120.0, currency: "USDT", date: "May 31, 9:41 AM" },
+  { id: "2", title: "Consulting Service", url: "drift.to/pay/def456", priceDisplay: "$350.00", amount: 350.0, currency: "USDT", date: "May 30, 4:21 PM" },
+  { id: "3", title: "Digital Product", url: "drift.to/pay/ghi789", priceDisplay: "$49.00", amount: 49.0, currency: "USDC", date: "May 29, 11:02 AM" },
 ];
 
-export const recentActivity = [
-  { type: "received", title: "Payment Received", from: "Sarah Johnson", amount: "+120.00 USDT", date: "2 min ago" },
-  { type: "withdrawal", title: "Withdrawal", from: "bc1qxy2kg...wlh", amount: "-0.1000 BTC", date: "1 hour ago" },
-  { type: "received", title: "Payment Received", from: "Michael Chen", amount: "+0.0045 BTC", date: "3 hours ago" },
-  { type: "received", title: "Payment Received", from: "Emma Williams", amount: "+250.00 USDC", date: "5 hours ago" },
+export interface ActivityItem {
+  type: "received" | "withdrawal";
+  title: string;
+  party: string;
+  amount: string;
+  positive: boolean;
+  date: string;
+}
+
+export const recentActivity: ActivityItem[] = [
+  { type: "received", title: "Payment Received", party: "From: Alex Johnson", amount: "+120.00 USDT", positive: true, date: "May 31, 9:41 AM" },
+  { type: "received", title: "Payment Received", party: "From: Crypto Store", amount: "+250.00 USDC", positive: true, date: "May 31, 8:05 AM" },
+  { type: "withdrawal", title: "Withdrawal", party: "To: bc1q9...af3d2e", amount: "-0.1000 BTC", positive: false, date: "May 30, 6:21 PM" },
+  { type: "received", title: "Payment Received", party: "From: Jane Smith", amount: "+75.50 USDT", positive: true, date: "May 30, 3:14 PM" },
+];
+
+export interface QuickAction {
+  label: string;
+  description?: string;
+  icon: string;
+  color: "purple" | "blue" | "green" | "orange";
+  href: string;
+}
+
+export const overviewQuickActions: QuickAction[] = [
+  { label: "Create Payment Link", icon: "Link2", color: "purple", href: "/dashboard/payment-links" },
+  { label: "Create Invoice", icon: "FileText", color: "blue", href: "/dashboard/invoices" },
+  { label: "Manage Wallets", icon: "Wallet", color: "green", href: "/dashboard/wallets" },
+  { label: "Add Customer", icon: "Users", color: "orange", href: "/dashboard/customers" },
+];
+
+export const transactionsQuickActions: QuickAction[] = [
+  { label: "Create Payment Link", description: "Get paid with a simple link", icon: "Link2", color: "purple", href: "/dashboard/payment-links" },
+  { label: "Create Invoice", description: "Send a professional invoice", icon: "FileText", color: "blue", href: "/dashboard/invoices" },
+  { label: "Create Wallet", description: "Generate a new wallet", icon: "Wallet", color: "green", href: "/dashboard/wallets" },
+  { label: "Add Customer", description: "Add a customer profile", icon: "Users", color: "orange", href: "/dashboard/customers" },
+];
+
+export const walletQuickActions: QuickAction[] = [
+  { label: "Deposit Crypto", description: "Add funds to your wallet", icon: "ArrowDownLeft", color: "green", href: "/dashboard/wallets" },
+  { label: "Withdraw Funds", description: "Transfer to external wallet", icon: "ArrowUpRight", color: "purple", href: "/dashboard/payouts" },
+  { label: "Transfer Between Wallets", description: "Move funds instantly", icon: "ArrowRightLeft", color: "blue", href: "/dashboard/wallets" },
+  { label: "View Address", description: "View all wallet addresses", icon: "Eye", color: "orange", href: "/dashboard/wallets" },
 ];
 
 export const paymentMethods = [
   { id: "usdt", label: "USDT", network: "TRC20", color: "#22c55e" },
   { id: "btc", label: "BTC", network: "Bitcoin", color: "#f59e0b" },
   { id: "usdc", label: "USDC", network: "ERC20", color: "#3b82f6" },
-  { id: "eth", label: "ETH", network: "Ethereum", color: "#a78bfa" },
+  { id: "eth", label: "ETH", network: "Ethereum", color: "#8b5cf6" },
 ];
 
 export const checkoutFeatures = [
@@ -136,20 +196,37 @@ export const checkoutFeatures = [
   "Cancel Anytime",
 ];
 
+export const demoCheckout = {
+  title: "Premium Membership",
+  badge: "Premium Access",
+  description: "Access to premium content, features and exclusive benefits.",
+  amount: "120.00",
+  currency: "USDT",
+  network: "TRC20",
+  usdApprox: "120.00",
+  deposit_address: "TPa7x6h9Q8mR2ygJ6K1b8v5d3f9a2e1c7",
+};
+
 export const trustedLogos = [
-  "CoinRank", "Morph", "BlockNext", "ShadowPay",
-  "Cryptify", "ApexPay", "ChainFlow", "X Wallet",
+  { name: "CoinRank", icon: "Coins" },
+  { name: "Morph", icon: "Boxes" },
+  { name: "BlockNext", icon: "Box" },
+  { name: "ShadowPay", icon: "Sparkles" },
+  { name: "Cryptify", icon: "Hexagon" },
+  { name: "ApexPay", icon: "Triangle" },
+  { name: "ChainFlow", icon: "Workflow" },
+  { name: "X Wallet", icon: "X" },
 ];
 
 export const landingFeatures = [
-  { title: "Multiple Payment Options", description: "Accept BTC, ETH, USDT, USDC and 50+ cryptocurrencies with automatic conversion.", icon: "Grid3x3" },
-  { title: "Real-time Tracking", description: "Monitor every transaction in real-time with instant notifications and webhooks.", icon: "Zap" },
-  { title: "Easy Integration", description: "Simple REST API and SDKs for Node.js, Python, and more. Go live in minutes.", icon: "Puzzle" },
-  { title: "Secure & Reliable", description: "Bank-grade encryption, multi-sig wallets, and 99.9% uptime guarantee.", icon: "Shield" },
+  { title: "Multiple Payment Options", description: "Accept BTC, USDT, USDC and more with ease.", icon: "Grid3x3" },
+  { title: "Real-time Tracking", description: "Track payments in real-time with instant notifications.", icon: "Zap" },
+  { title: "Easy Integration", description: "Integrate in minutes with our API or payment links.", icon: "Puzzle" },
+  { title: "Secure & Reliable", description: "Enterprise grade security you can count on.", icon: "Shield" },
 ];
 
 export const heroFeatures = [
-  { label: "Easy Integration", icon: "Code" },
+  { label: "Easy Integration", icon: "Puzzle" },
   { label: "Instant Payments", icon: "Zap" },
   { label: "Global Reach", icon: "Globe" },
   { label: "Secure & Reliable", icon: "Shield" },

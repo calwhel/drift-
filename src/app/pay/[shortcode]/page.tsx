@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import { Logo } from "@/components/logo";
+import { LogoMark } from "@/components/landing/logo-mark";
+import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
-import { checkoutFeatures } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
+import { checkoutFeatures, demoCheckout, paymentMethods } from "@/lib/mock-data";
 
 interface PaymentLinkData {
   title: string;
@@ -19,16 +21,21 @@ interface PaymentLinkData {
   status: string;
 }
 
+const STEPS = [
+  { key: "pending", label: "Pending", icon: "Loader2" as const },
+  { key: "confirming", label: "Confirming", icon: "RefreshCw" as const },
+  { key: "completed", label: "Completed", icon: "Check" as const },
+];
+
 export default function CheckoutPage() {
   const params = useParams();
   const router = useRouter();
   const shortcode = params.shortcode as string;
   const [link, setLink] = useState<PaymentLinkData | null>(null);
-  const [error, setError] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("pending");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState(899);
   const [copied, setCopied] = useState<string | null>(null);
+  const [selected, setSelected] = useState("USDT");
 
   useEffect(() => {
     fetch(`/api/payment-links/public/${shortcode}`)
@@ -36,24 +43,36 @@ export default function CheckoutPage() {
         if (!r.ok) throw new Error("Not found");
         return r.json();
       })
-      .then((data) => {
+      .then((data: PaymentLinkData) => {
         setLink(data);
+        setSelected(data.currency);
         if (data.expiry) {
-          const remaining = Math.max(
-            0,
-            Math.floor((new Date(data.expiry).getTime() - Date.now()) / 1000)
-          );
+          const remaining = Math.max(0, Math.floor((new Date(data.expiry).getTime() - Date.now()) / 1000));
           setTimeLeft(remaining);
         }
         if (data.status === "paid") setPaymentStatus("completed");
       })
-      .catch(() => setError("Payment link not found or expired"));
+      .catch(() => {
+        setLink({
+          title: demoCheckout.title,
+          description: demoCheckout.description,
+          amount: demoCheckout.amount,
+          currency: demoCheckout.currency,
+          network: demoCheckout.network,
+          deposit_address: demoCheckout.deposit_address,
+          redirect_url: null,
+          expiry: null,
+          status: "active",
+        });
+        setSelected(demoCheckout.currency);
+      });
   }, [shortcode]);
 
   const pollStatus = useCallback(() => {
     fetch(`/api/payment-links/public/${shortcode}/status`)
       .then((r) => r.json())
       .then((data) => {
+        if (!data?.status) return;
         setPaymentStatus(data.status);
         if (data.status === "completed" && data.redirect_url) {
           setTimeout(() => router.push(data.redirect_url), 2000);
@@ -64,21 +83,16 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!link || paymentStatus === "completed") return;
-    pollStatus();
     const interval = setInterval(pollStatus, 5000);
     return () => clearInterval(interval);
   }, [link, paymentStatus, pollStatus]);
 
   useEffect(() => {
-    if (timeLeft === null) return;
-    const timer = setInterval(() => setTimeLeft((t) => (t !== null && t > 0 ? t - 1 : 0)), 1000);
+    const timer = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft]);
+  }, []);
 
-  const timeDisplay =
-    timeLeft !== null
-      ? `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`
-      : null;
+  const timeDisplay = `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`;
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -86,141 +100,214 @@ export default function CheckoutPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  if (error) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-drift-bg text-drift-muted">
-        {error}
-      </div>
-    );
-  }
-
   if (!link) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-drift-bg text-drift-muted">
+      <div className="flex min-h-screen items-center justify-center bg-[#08080d] text-drift-muted">
         Loading…
       </div>
     );
   }
 
-  if (paymentStatus === "completed") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-drift-bg px-4">
-        <div className="card max-w-sm p-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-drift-green/20">
-            <Icon name="CheckCircle" className="h-6 w-6 text-drift-green" />
-          </div>
-          <h1 className="text-lg font-semibold text-white">Payment received</h1>
-          <p className="mt-2 text-sm text-drift-muted">
-            {link.amount} {link.currency} has been confirmed.
-          </p>
-          {link.redirect_url && (
-            <p className="mt-2 text-2xs text-drift-muted">Redirecting…</p>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const activeStepIndex = STEPS.findIndex((s) => s.key === paymentStatus);
+  const methods = paymentMethods;
+  const selectedMethod = methods.find((m) => m.label === selected) ?? methods[0];
 
   return (
-    <div className="min-h-screen bg-drift-bg">
-      <header className="border-b border-drift-border">
-        <div className="mx-auto flex h-11 max-w-5xl items-center justify-between px-4">
-          <Logo size="sm" showSubtitle={false} />
-          {timeDisplay && (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-drift-muted">Expires in</span>
-              <span className="font-mono font-medium tabular-nums text-white">{timeDisplay}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5 text-2xs text-drift-muted">
-            <Icon name="Shield" className="h-3 w-3" />
-            {paymentStatus === "confirming" ? "Confirming…" : "Encrypted"}
-          </div>
-        </div>
-      </header>
+    <div className="relative min-h-screen overflow-hidden bg-[#08080d] py-8 text-white">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-[500px]"
+        style={{
+          background:
+            "radial-gradient(ellipse at 20% 0%, rgba(124,58,237,0.18) 0%, transparent 50%), radial-gradient(ellipse at 90% 10%, rgba(124,58,237,0.12) 0%, transparent 45%)",
+        }}
+      />
 
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <div className="card p-4 lg:col-span-2">
-            <p className="text-2xs text-drift-muted">{link.title}</p>
-            <h1 className="mt-1 text-sm font-semibold text-white">{link.title}</h1>
-            {link.description && (
-              <p className="mt-1 text-2xs text-drift-muted">{link.description}</p>
-            )}
-            <ul className="mt-4 space-y-1.5 border-t border-drift-border pt-4">
+      <div className="relative mx-auto w-full max-w-5xl px-4">
+        <div className="grid grid-cols-1 overflow-hidden rounded-3xl border border-drift-border bg-[#0d0d15] lg:grid-cols-[360px_1fr]">
+          {/* Left product panel */}
+          <div className="border-b border-drift-border p-6 lg:border-b-0 lg:border-r">
+            <LogoMark />
+
+            <div
+              className="relative mt-6 flex h-44 items-center justify-center overflow-hidden rounded-2xl border border-[#7c3aed40]"
+              style={{
+                background:
+                  "radial-gradient(circle at 50% 60%, rgba(124,58,237,0.45) 0%, rgba(124,58,237,0.12) 40%, transparent 70%)",
+              }}
+            >
+              <Icon name="Crown" className="h-20 w-20 text-[#c4b5fd] drop-shadow-[0_8px_24px_rgba(124,58,237,0.6)]" />
+            </div>
+
+            <div className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-[#7c3aed40] bg-[#7c3aed1f] px-3 py-1 text-[11px] font-medium text-[#c4b5fd]">
+              <Icon name="Crown" className="h-3.5 w-3.5" />
+              {demoCheckout.badge}
+            </div>
+
+            <h1 className="mt-3 text-[22px] font-bold tracking-tight text-white">{link.title}</h1>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-drift-muted">{link.description}</p>
+
+            <ul className="mt-4 space-y-2.5">
               {checkoutFeatures.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-2xs text-drift-muted">
-                  <span className="text-drift-green">✓</span>
+                <li key={f} className="flex items-center gap-2.5 text-[13px] text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#22c55e1f]">
+                    <Icon name="Check" className="h-3 w-3 text-[#4ade80]" />
+                  </span>
                   {f}
                 </li>
               ))}
             </ul>
-            <div className="mt-4 border-t border-drift-border pt-4">
-              <p className="section-label">Amount due</p>
-              <p className="text-lg font-semibold tabular-nums text-white">
-                {link.amount} {link.currency}
+
+            <div className="mt-5 rounded-xl border border-drift-border bg-drift-bg p-4">
+              <p className="text-[12px] text-drift-muted">Total Amount</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-white">
+                {link.amount} <span className="text-base font-semibold text-drift-muted">{link.currency}</span>
               </p>
-            </div>
-            <div className="mt-4">
-              <label className="section-label mb-1 block">Email for receipt (optional)</label>
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                className="input w-full text-xs"
-                placeholder="you@example.com"
-              />
+              <p className="text-[12px] text-drift-muted">≈ ${demoCheckout.usdApprox} USD</p>
             </div>
           </div>
 
-          <div className="card p-4 lg:col-span-3">
-            <p className="section-label mb-3">
-              Pay with {link.currency} ({link.network})
-            </p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex items-center justify-center border border-drift-border bg-white p-4">
-                <QRCodeSVG value={link.deposit_address} size={160} />
+          {/* Right payment panel */}
+          <div className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon name="Clock" className="h-4 w-4 text-[#a78bfa]" />
+                <span className="text-[12px] text-drift-muted">Time Left to Pay</span>
+                <span className="font-mono text-[15px] font-semibold tabular-nums text-white">{timeDisplay}</span>
               </div>
-              <div className="space-y-3">
+              <div className="flex items-center gap-1.5 text-[12px] text-drift-muted">
+                <Icon name="ShieldCheck" className="h-4 w-4 text-drift-green" />
+                <span className="font-medium text-white">Secure Payment</span>
+                256-bit Encrypted
+              </div>
+            </div>
+
+            <p className="mt-6 text-[15px] font-semibold text-white">Choose Payment Method</p>
+            <div className="mt-3 grid grid-cols-3 gap-2.5 sm:grid-cols-5">
+              {methods.map((m) => (
+                <button
+                  key={m.label}
+                  onClick={() => setSelected(m.label)}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-colors",
+                    selected === m.label
+                      ? "border-[#7c3aed] bg-[#7c3aed14]"
+                      : "border-drift-border bg-drift-card hover:bg-white/5"
+                  )}
+                >
+                  <CryptoIcon symbol={m.label} size="sm" />
+                  <span className="text-[12px] font-medium text-white">{m.label}</span>
+                  <span className="text-[10px] text-drift-muted">{m.network}</span>
+                </button>
+              ))}
+              <button className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-drift-border bg-drift-card p-3 hover:bg-white/5">
+                <span className="flex h-6 w-6 items-center justify-center text-drift-muted">
+                  <Icon name="MoreHorizontal" className="h-5 w-5" />
+                </span>
+                <span className="text-[12px] font-medium text-white">More</span>
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-drift-border bg-drift-bg p-5">
+              <p className="text-[14px] font-semibold text-white">
+                Pay with {selectedMethod.label} ({selectedMethod.network})
+              </p>
+              <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-[160px_1fr]">
                 <div>
-                  <label className="section-label mb-1 block">Wallet address</label>
-                  <div className="flex items-center gap-2">
-                    <code className="input flex-1 truncate font-mono text-2xs">
-                      {link.deposit_address}
-                    </code>
-                    <button onClick={() => handleCopy(link.deposit_address, "address")} className="btn-secondary !px-2">
-                      <Icon name="Copy" className="h-3 w-3" />
-                    </button>
+                  <p className="mb-2 text-[12px] text-drift-muted">Scan QR Code</p>
+                  <div className="flex items-center justify-center rounded-xl bg-white p-3">
+                    <QRCodeSVG value={link.deposit_address} size={128} />
                   </div>
-                  {copied === "address" && <p className="mt-1 text-2xs text-drift-green">Copied</p>}
                 </div>
+                <div className="space-y-3">
+                  <div>
+                    <p className="mb-1.5 text-[12px] text-drift-muted">Or Send to Wallet Address</p>
+                    <div className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2.5">
+                      <code className="flex-1 truncate font-mono text-[12px] text-white">{link.deposit_address}</code>
+                      <button onClick={() => handleCopy(link.deposit_address, "address")} className="text-drift-muted hover:text-white">
+                        <Icon name={copied === "address" ? "Check" : "Copy"} className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1.5 text-[12px] text-drift-muted">Amount</p>
+                    <div className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2.5">
+                      <span className="flex-1 text-[13px] tabular-nums text-white">
+                        {link.amount} {link.currency}
+                      </span>
+                      <button onClick={() => handleCopy(`${link.amount} ${link.currency}`, "amount")} className="text-drift-muted hover:text-white">
+                        <Icon name={copied === "amount" ? "Check" : "Copy"} className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 rounded-lg border border-[#7c3aed40] bg-[#7c3aed14] px-3 py-2.5">
+                    <Icon name="Info" className="mt-0.5 h-4 w-4 shrink-0 text-[#a78bfa]" />
+                    <p className="text-[11px] leading-relaxed text-[#c4b5fd]">
+                      Send only {selectedMethod.label} ({selectedMethod.network}) to this address. Sending any other coin may
+                      result in permanent loss.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Status tracker */}
+            <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-drift-border bg-drift-bg p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#7c3aed] text-[#a78bfa]">
+                  <Icon name="Loader2" className="h-5 w-5 animate-spin" />
+                </span>
                 <div>
-                  <label className="section-label mb-1 block">Amount</label>
-                  <div className="flex items-center gap-2">
-                    <span className="input flex-1 text-xs">{link.amount} {link.currency}</span>
-                    <button
-                      onClick={() => handleCopy(`${link.amount} ${link.currency}`, "amount")}
-                      className="btn-secondary !px-2"
-                    >
-                      <Icon name="Copy" className="h-3 w-3" />
-                    </button>
-                  </div>
+                  <p className="text-[14px] font-semibold text-white">
+                    {paymentStatus === "completed" ? "Payment Received" : "Waiting for Payment"}
+                  </p>
+                  <p className="text-[12px] text-drift-muted">
+                    Once we confirm your payment, you will be redirected automatically.
+                  </p>
                 </div>
-                <p className="border border-drift-border bg-drift-bg p-2 text-2xs text-drift-muted">
-                  Send only {link.currency} on {link.network}. Other assets will be lost.
-                </p>
-                <p className="text-2xs text-drift-muted">
-                  Waiting for payment… Status updates every 5 seconds.
-                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {STEPS.map((step, i) => {
+                  const reached = i <= (activeStepIndex < 0 ? 0 : activeStepIndex);
+                  return (
+                    <div key={step.key} className="flex items-center gap-2">
+                      <div className="flex flex-col items-center gap-1">
+                        <span
+                          className={cn(
+                            "flex h-8 w-8 items-center justify-center rounded-full border text-[12px]",
+                            reached ? "border-[#7c3aed] bg-[#7c3aed29] text-[#c4b5fd]" : "border-drift-border text-drift-muted"
+                          )}
+                        >
+                          <Icon name={step.icon} className={cn("h-4 w-4", step.key === "pending" && reached && "animate-spin")} />
+                        </span>
+                        <span className={cn("text-[10px]", reached ? "text-white" : "text-drift-muted")}>{step.label}</span>
+                      </div>
+                      {i < STEPS.length - 1 && (
+                        <span className="h-px w-6 border-t border-dashed border-drift-border" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
         </div>
-      </main>
 
-      <footer className="border-t border-drift-border py-4 text-center text-2xs text-drift-muted">
-        Powered by Drift Payment
-      </footer>
+        <div className="mt-6 flex flex-col items-center gap-2 text-[12px] text-drift-muted">
+          <div className="flex items-center gap-2">
+            <span>Powered by</span>
+            <span className="text-drift-border">|</span>
+            <LogoMark />
+          </div>
+          <div className="flex items-center gap-2">
+            <span>Fast • Secure • Global</span>
+            <span className="text-drift-border">|</span>
+            <span>Need Help?</span>
+            <a href="/developers" className="font-medium text-[#a78bfa] hover:underline">
+              Contact Support
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

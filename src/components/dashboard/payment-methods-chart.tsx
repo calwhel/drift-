@@ -1,79 +1,53 @@
 "use client";
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { CHART_COLORS } from "@/lib/constants";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { paymentMethodsData } from "@/lib/mock-data";
 
 interface PaymentMethodsChartProps {
-  data?: Record<string, number>;
-  total?: number;
+  data?: Array<{ name: string; value: number; color: string }>;
+  centerValue?: string;
 }
 
-const FALLBACK_COLORS = ["#22c55e", "#f59e0b", "#3b82f6", "#7c3aed", "#14b8a6"];
-
-export function PaymentMethodsChart({ data = {}, total = 0 }: PaymentMethodsChartProps) {
-  const entries = Object.entries(data);
-  const sum = entries.reduce((s, [, v]) => s + v, 0) || 1;
-
-  const chartData = entries.map(([name, value], i) => ({
-    name,
-    value: Math.round((value / sum) * 1000) / 10,
-    color: CHART_COLORS[name] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-  }));
-
-  if (chartData.length === 0) {
-    return (
-      <div className="flex h-[160px] items-center justify-center text-xs text-drift-muted">
-        No payment data yet
-      </div>
-    );
-  }
-
+export function PaymentMethodsChart({
+  data = paymentMethodsData,
+  centerValue = "$24,560",
+}: PaymentMethodsChartProps) {
   return (
-    <div className="flex flex-col">
-      <div className="relative h-[160px] min-h-[160px] w-full min-w-0">
+    <div className="flex items-center gap-4">
+      <div className="relative h-[150px] w-[150px] shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={chartData}
+              data={data}
               cx="50%"
               cy="50%"
-              innerRadius={48}
-              outerRadius={68}
-              paddingAngle={2}
+              innerRadius={50}
+              outerRadius={70}
+              paddingAngle={3}
               dataKey="value"
               stroke="none"
+              startAngle={90}
+              endAngle={-270}
             >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+              {data.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip
-              contentStyle={{
-                background: "#111118",
-                border: "1px solid #1e1e2e",
-                borderRadius: "4px",
-                fontSize: "12px",
-                color: "#fff",
-              }}
-              formatter={(value) => [`${value}%`, "Share"]}
-            />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-sm font-semibold tabular-nums text-white">
-            ${total.toLocaleString(undefined, { minimumFractionDigits: 0 })}
-          </p>
-          <p className="text-2xs text-drift-muted">Total</p>
+          <p className="text-base font-bold tabular-nums text-white">{centerValue}</p>
+          <p className="text-[11px] text-drift-muted">Total</p>
         </div>
       </div>
-      <div className="mt-3 space-y-1.5 border-t border-drift-border pt-3">
-        {chartData.map((item) => (
-          <div key={item.name} className="flex items-center justify-between text-2xs">
+      <div className="flex-1 space-y-3">
+        {data.map((item) => (
+          <div key={item.name} className="flex items-center justify-between text-[13px]">
             <div className="flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
               <span className="text-drift-muted">{item.name}</span>
             </div>
-            <span className="tabular-nums text-white">{item.value}%</span>
+            <span className="font-medium tabular-nums text-white">{item.value}%</span>
           </div>
         ))}
       </div>
