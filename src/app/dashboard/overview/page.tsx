@@ -1,151 +1,196 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StatsRow } from "@/components/stats-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { PaymentMethodsChart } from "@/components/dashboard/payment-methods-chart";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
-import { Icon, type IconName } from "@/components/icons";
-import { overviewQuickActions } from "@/lib/mock-data";
-import { cn } from "@/lib/utils";
+import { Icon } from "@/components/icons";
+import type { LiveStats } from "@/components/stats-card";
+import type { Transaction } from "@/lib/mock-data";
 
-const tileClass: Record<string, string> = {
-  purple: "tile-purple",
-  blue: "tile-blue",
-  green: "tile-green",
-  orange: "tile-orange",
-};
+interface DashboardStats {
+  totalGross: number;
+  totalPayments: number;
+  completed: number;
+  pending: number;
+  revenueChart?: Array<{ date: string; revenue: string | number }>;
+  paymentMethods?: Record<string, number>;
+  recentTransactions: Array<{
+    id: string;
+    amount: string;
+    currency: string;
+    status: string;
+    createdAt: string;
+    customerEmail?: string | null;
+  }>;
+}
 
-export default function DashboardOverviewPage() {
-  return (
-    <>
-      <DashboardHeader
-        title="Overview"
-        emoji="👋"
-        subtitle="Here's what's happening with your business today."
-        actions={
-          <div className="hidden items-center gap-2 md:flex">
-            <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">
-              <Icon name="Calendar" className="h-3.5 w-3.5 text-drift-muted" />
-              May 1 – May 31, 2024
-              <Icon name="ChevronDown" className="h-3.5 w-3.5 text-drift-muted" />
-            </button>
-            <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">
-              <Icon name="Download" className="h-3.5 w-3.5 text-drift-muted" />
-              Export
-              <Icon name="ChevronDown" className="h-3.5 w-3.5 text-drift-muted" />
-            </button>
-          </div>
+interface WalletRow {
+  id: string;
+  currency: string;
+  balance: string;
+}
+
+function mapTx(tx: DashboardStats["recentTransactions"][0]): Transaction {
+  const statusMap: Record<string, Transaction["status"]> = {
+    completed: "Completed",
+    confirming: "Pending",
+    pending: "Pending",
+    failed: "Failed",
+  };
+  return {
+    id: tx.id.slice(0, 12).toUpperCase(),
+    customer: tx.customerEmail ?? "Customer",
+    amount: Number(tx.amount),
+    currency: tx.currency,
+    status: statusMap[tx.status] ?? "Pending",
+    date: new Date(tx.createdAt).toLocaleString(),
+  };
+}
+
+export default function OverviewPage() {
+  const { status } = useSession();
+  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [wallets, setWallets] = useState<WalletRow[]>([]);
+  const [totalBalance, setTotalBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/auth/login");
+      return;
+    }
+    if (status !== "authenticated") return;
+
+    Promise.all([
+      fetch("/api/dashboard/stats").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/wallets").then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([statsData, walletsData]) => {
+        if (statsData) setStats(statsData);
+        if (walletsData) {
+          setWallets(walletsData.wallets ?? []);
+          setTotalBalance(walletsData.totalBalance ?? 0);
         }
-      />
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [status, router]);
 
-      <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-        <StatsRow />
+  const liveStats: LiveStats | null = stats
+    ? {
+        totalGross: stats.totalGross,
+        totalPayments: stats.totalPayments,
+        completed: stats.completed,
+        pending: stats.pending,
+      }
+    : null;
 
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="card-elevated p-5 lg:col-span-2">
-            <div className="mb-4 flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="TrendingUp" className="h-4 w-4 text-[#a78bfa]" />
-                <h2 className="text-[15px] font-semibold text-white">Revenue Overview</h2>
-              </div>
-              <button className="flex items-center gap-1.5 rounded-lg border border-drift-border bg-drift-card px-2.5 py-1.5 text-[12px] text-white">
-                Gross Revenue
-                <Icon name="ChevronDown" className="h-3.5 w-3.5 text-drift-muted" />
-              </button>
+  const recentTx = stats?.recentTransactions?.length
+    ? stats.recentTransactions.map(mapTx)
+    : undefined;
+
+  if (status === "loading" || loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <DashboardHeader title="Overview" />
+
+      <div className="space-y-6 p-4 sm:p-6">
+        <StatsRow live={liveStats} />
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 lg:col-span-2">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-white">Revenue</h2>
             </div>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-2xl font-bold tabular-nums text-white">$24,560.00</span>
-              <span className="flex items-center gap-0.5 text-[13px] font-medium text-drift-green">
-                <Icon name="ArrowUpRight" className="h-3.5 w-3.5" />
-                12.5%
-              </span>
-            </div>
-            <p className="mb-2 text-[12px] text-drift-muted">vs Apr 1 – Apr 30</p>
-            <RevenueChart />
+            <RevenueChart data={stats?.revenueChart} />
           </div>
 
-          <div className="card-elevated p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="DollarSign" className="h-4 w-4 text-[#a78bfa]" />
-                <h2 className="text-[15px] font-semibold text-white">Payment Methods</h2>
-              </div>
-              <Link href="/dashboard/transactions" className="text-[12px] text-[#a78bfa] hover:underline">
-                View all
-              </Link>
-            </div>
-            <PaymentMethodsChart />
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+            <h2 className="mb-4 text-base font-semibold text-white">Payment Methods</h2>
+            <PaymentMethodsChart data={stats?.paymentMethods} total={stats?.totalGross} />
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="card-elevated p-5 lg:col-span-2">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="ArrowRightLeft" className="h-4 w-4 text-[#a78bfa]" />
-                <h2 className="text-[15px] font-semibold text-white">Recent Transactions</h2>
-              </div>
-              <Link href="/dashboard/transactions" className="text-[12px] text-[#a78bfa] hover:underline">
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6 lg:col-span-2">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-white">Recent Transactions</h2>
+              <button
+                onClick={() => router.push("/dashboard/transactions")}
+                className="text-xs text-brand-400 hover:text-brand-300"
+              >
                 View all
-              </Link>
+              </button>
             </div>
-            <TransactionsTable limit={4} />
+            <TransactionsTable data={recentTx} limit={5} />
           </div>
 
           <div className="space-y-4">
-            <div className="card-elevated relative overflow-hidden p-5">
-              <div className="absolute right-4 top-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] shadow-[0_8px_24px_rgba(124,58,237,0.4)]">
-                <Icon name="Wallet" className="h-6 w-6 text-white" />
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+              <h2 className="mb-4 text-base font-semibold text-white">Balance</h2>
+              <p className="text-3xl font-bold text-white">
+                ${totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">Available to withdraw</p>
+              <div className="mt-6 space-y-3">
+                {wallets.length > 0 ? (
+                  wallets.slice(0, 3).map((w) => (
+                    <div key={w.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-400">{w.currency}</span>
+                      <span className="font-medium text-white">
+                        {parseFloat(w.balance).toFixed(4)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No wallets yet</p>
+                )}
               </div>
-              <p className="text-[13px] text-drift-muted">Total Balance</p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-2xl font-bold tabular-nums text-white">$24,560.00</span>
-                <span className="text-[13px] font-medium text-drift-green">12.5%</span>
-              </div>
-              <p className="mt-1 text-[12px] text-drift-muted">Available to withdraw</p>
-              <div className="mt-4 flex gap-2">
-                <Link
-                  href="/dashboard/payouts"
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#7c3aed] py-2.5 text-[13px] font-semibold text-white hover:bg-[#6d28d9]"
-                >
-                  <Icon name="ArrowUpRight" className="h-4 w-4" />
-                  Withdraw
-                </Link>
-                <Link
-                  href="/dashboard/wallets"
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-drift-border bg-drift-card py-2.5 text-[13px] font-medium text-white hover:bg-white/5"
-                >
-                  <Icon name="Wallet" className="h-4 w-4" />
-                  View Wallets
-                </Link>
-              </div>
+              <button
+                onClick={() => router.push("/dashboard/wallets")}
+                className="mt-6 w-full rounded-xl bg-brand-600 py-2.5 text-sm font-medium text-white transition hover:bg-brand-500"
+              >
+                Manage Wallets
+              </button>
             </div>
 
-            <div className="card-elevated p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <Icon name="Zap" className="h-4 w-4 text-[#a78bfa]" />
-                <h3 className="text-[15px] font-semibold text-white">Quick Actions</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {overviewQuickActions.map((action) => (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+              <h3 className="mb-3 text-sm font-semibold text-white">Quick Actions</h3>
+              <div className="space-y-1">
+                {[
+                  { label: "Create payment link", href: "/dashboard/payment-links" },
+                  { label: "API keys", href: "/dashboard/api-keys" },
+                  { label: "Manage wallets", href: "/dashboard/wallets" },
+                  { label: "Webhooks", href: "/dashboard/webhooks" },
+                ].map((action) => (
                   <Link
                     key={action.label}
                     href={action.href}
-                    className="flex flex-col gap-2 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
+                    className="flex items-center justify-between rounded-lg px-2 py-2 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white"
                   >
-                    <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tileClass[action.color])}>
-                      <Icon name={action.icon as IconName} className="h-[18px] w-[18px]" />
-                    </span>
-                    <span className="text-[12px] font-medium leading-tight text-white">{action.label}</span>
+                    {action.label}
+                    <Icon name="ChevronRight" className="h-4 w-4" />
                   </Link>
                 ))}
               </div>
             </div>
           </div>
         </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }

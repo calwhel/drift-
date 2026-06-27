@@ -1,33 +1,150 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
+import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 
 const CURRENCIES = ["USDT", "BTC", "USDC", "ETH", "SOL"];
-const EXPIRY_OPTIONS = ["1 day", "7 days", "14 days", "30 days", "Never"];
+const EXPIRY_OPTIONS: Record<string, number | null> = {
+  "1 day": 1,
+  "7 days": 7,
+  "14 days": 14,
+  "30 days": 30,
+  Never: null,
+};
+
+interface PaymentLinkRow {
+  id: string;
+  title: string;
+  shortCode: string;
+  amount: string;
+  currency: string;
+  status: string;
+}
+
+interface WalletOption {
+  id: string;
+  currency: string;
+  network: string;
+  address: string;
+  walletType: string;
+  label: string | null;
+}
 
 export default function PaymentLinksPage() {
-  const [name, setName] = useState("Premium Membership");
-  const [description, setDescription] = useState("Access to premium content and features.");
-  const [amount, setAmount] = useState("120.00");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
+  const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
-  const [expiryOn, setExpiryOn] = useState(true);
+  const [expiryOn, setExpiryOn] = useState(false);
   const [expiry, setExpiry] = useState("7 days");
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [expiryOpen, setExpiryOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [links, setLinks] = useState<PaymentLinkRow[]>([]);
+  const [wallets, setWallets] = useState<WalletOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [createdLink, setCreatedLink] = useState<PaymentLinkRow | null>(null);
 
-  const linkUrl = "drift.to/pay/abc123";
+  const loadLinks = () => {
+    fetch("/api/payment-links")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setLinks)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadLinks();
+    fetch("/api/wallets")
+      .then((r) => (r.ok ? r.json() : { wallets: [] }))
+      .then((d) => setWallets(d.wallets ?? []))
+      .catch(() => {});
+  }, []);
+
+  const walletsForCurrency = useMemo(
+    () => wallets.filter((w) => w.currency === currency),
+    [wallets, currency]
+  );
+
+  useEffect(() => {
+    if (walletsForCurrency.length > 0 && !walletsForCurrency.find((w) => w.id === walletId)) {
+      setWalletId(walletsForCurrency[0].id);
+    } else if (walletsForCurrency.length === 0) {
+      setWalletId("");
+    }
+  }, [walletsForCurrency, walletId]);
+
+  const selectedWallet = wallets.find((w) => w.id === walletId);
+  const previewLink = createdLink
+    ? `/pay/${createdLink.shortCode}`
+    : amount
+      ? `drift.to/pay/preview`
+      : "drift.to/pay/...";
 
   const copyLink = () => {
-    navigator.clipboard.writeText(`https://${linkUrl}`);
+    const url = createdLink
+      ? `${window.location.origin}/pay/${createdLink.shortCode}`
+      : `https://${previewLink}`;
+    navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCreate = async () => {
+    if (!walletId) {
+      setError(`Create a ${currency} wallet in Wallets first`);
+      return;
+    }
+    setLoading(true);
+    setError("");
+
+    let expiryIso: string | undefined;
+    if (expiryOn && EXPIRY_OPTIONS[expiry]) {
+      const d = new Date();
+      d.setDate(d.getDate() + (EXPIRY_OPTIONS[expiry] ?? 0));
+      expiryIso = d.toISOString();
+    }
+
+    const res = await fetch("/api/payment-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: name,
+        description: description || undefined,
+        amount: Number(amount),
+        currency,
+        wallet_id: walletId,
+        redirect_url: redirectUrl || undefined,
+        expiry: expiryIso,
+      }),
+    });
+    const data = await res.json();
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to create link");
+      return;
+    }
+
+    setCreatedLink(data);
+    setName("");
+    setDescription("");
+    setAmount("");
+    loadLinks();
+  };
+
+  const deactivate = async (id: string) => {
+    await fetch(`/api/payment-links/${id}`, { method: "DELETE" });
+    if (createdLink?.id === id) setCreatedLink(null);
+    loadLinks();
   };
 
   return (
@@ -35,16 +152,16 @@ export default function PaymentLinksPage() {
       <DashboardHeader
         title="Create Payment Link"
         subtitle="Create a link and start accepting payments in minutes."
-        actions={
-          <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-drift-border bg-drift-card text-drift-muted hover:text-white">
-            <Icon name="Sun" className="h-[18px] w-[18px]" />
-          </button>
-        }
       />
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {error && (
+          <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
+            {error}
+          </p>
+        )}
+
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_400px]">
-          {/* Form */}
           <div className="card-elevated p-6">
             <div className="space-y-5">
               <div>
@@ -53,6 +170,7 @@ export default function PaymentLinksPage() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  placeholder="Premium Membership"
                   className="w-full rounded-lg border border-drift-border bg-drift-bg px-3.5 py-2.5 text-[14px] text-white placeholder:text-drift-muted focus:border-[#7c3aed] focus:outline-none"
                 />
               </div>
@@ -76,6 +194,7 @@ export default function PaymentLinksPage() {
                     type="text"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
+                    placeholder="120.00"
                     className="flex-1 rounded-lg border border-drift-border bg-drift-bg px-3.5 py-2.5 text-[14px] text-white focus:border-[#7c3aed] focus:outline-none"
                   />
                   <div className="relative">
@@ -111,6 +230,31 @@ export default function PaymentLinksPage() {
               </div>
 
               <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-white">Receive to wallet</label>
+                {walletsForCurrency.length === 0 ? (
+                  <p className="text-sm text-red-400">
+                    No {currency} wallet yet.{" "}
+                    <Link href="/dashboard/wallets" className="text-brand-400 hover:underline">
+                      Add one in Wallets
+                    </Link>
+                  </p>
+                ) : (
+                  <select
+                    value={walletId}
+                    onChange={(e) => setWalletId(e.target.value)}
+                    className="w-full rounded-lg border border-drift-border bg-drift-bg px-3.5 py-2.5 text-[14px] text-white focus:border-[#7c3aed] focus:outline-none"
+                  >
+                    {walletsForCurrency.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.label ?? w.currency} — {w.walletType === "generated" ? "Drift custodial" : "Connected"} (
+                        {w.address.slice(0, 8)}…)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
                 <div className="mb-1.5 flex items-center justify-between">
                   <label className="text-[13px] font-medium text-white">
                     Set Expiry <span className="text-drift-muted">(Optional)</span>
@@ -143,7 +287,7 @@ export default function PaymentLinksPage() {
                     </button>
                     {expiryOpen && (
                       <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-drift-border bg-drift-card py-1 shadow-lg">
-                        {EXPIRY_OPTIONS.map((o) => (
+                        {Object.keys(EXPIRY_OPTIONS).map((o) => (
                           <button
                             key={o}
                             type="button"
@@ -175,34 +319,45 @@ export default function PaymentLinksPage() {
                 />
               </div>
 
-              <button className="w-full rounded-lg bg-[#7c3aed] py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[#6d28d9]">
-                Create Link
+              <button
+                onClick={handleCreate}
+                disabled={loading || !name || !amount || !walletId}
+                className="w-full rounded-lg bg-[#7c3aed] py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[#6d28d9] disabled:opacity-50"
+              >
+                {loading ? "Creating…" : "Create Link"}
               </button>
             </div>
           </div>
 
-          {/* Preview */}
           <div>
             <p className="mb-2 text-[13px] font-medium text-white">Preview</p>
             <div className="card-elevated p-6 text-center">
-              <h3 className="text-[18px] font-bold text-white">{name || "Product Name"}</h3>
+              <h3 className="text-[18px] font-bold text-white">{name || createdLink?.title || "Product Name"}</h3>
               {description && (
                 <p className="mx-auto mt-1.5 max-w-[240px] text-[13px] leading-snug text-drift-muted">
                   {description}
                 </p>
               )}
               <p className="mt-5 text-2xl font-bold tabular-nums text-white">
-                {amount || "0.00"} {currency}
+                {amount || createdLink?.amount || "0.00"} {currency}
               </p>
               <div className="mx-auto mt-5 flex w-[200px] items-center justify-center rounded-2xl bg-white p-4">
-                <QRCodeSVG value={`https://${linkUrl}`} size={168} />
+                <QRCodeSVG
+                  value={
+                    createdLink
+                      ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${createdLink.shortCode}`
+                      : selectedWallet?.address ?? previewLink
+                  }
+                  size={168}
+                />
               </div>
               <div className="mt-5 rounded-lg border border-drift-border bg-drift-bg px-3 py-2.5 text-[13px] text-white">
-                {linkUrl}
+                {createdLink ? `/pay/${createdLink.shortCode}` : previewLink}
               </div>
               <button
                 onClick={copyLink}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-drift-border bg-drift-card py-2.5 text-[13px] font-medium text-white hover:bg-white/5"
+                disabled={!createdLink}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-drift-border bg-drift-card py-2.5 text-[13px] font-medium text-white hover:bg-white/5 disabled:opacity-50"
               >
                 <Icon name={copied ? "Check" : "Copy"} className="h-4 w-4" />
                 {copied ? "Copied!" : "Copy Link"}
@@ -211,32 +366,66 @@ export default function PaymentLinksPage() {
           </div>
         </div>
 
-        {/* Secure banner */}
-        <div className="card-elevated mt-5 flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl tile-purple">
-              <Icon name="ShieldCheck" className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-[14px] font-semibold text-white">Secure &amp; Reliable</p>
-              <p className="text-[12px] text-drift-muted">
-                Your payments are secured with industry-leading encryption and monitored 24/7.
-              </p>
-            </div>
+        <div className="card-elevated mt-6 overflow-hidden">
+          <div className="border-b border-drift-border px-5 py-4">
+            <h2 className="text-[15px] font-semibold text-white">Your Payment Links</h2>
+            <p className="text-[12px] text-drift-muted">{links.length} links</p>
           </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <span className="flex items-center gap-2 text-[12px] text-white">
-              <Icon name="CheckCircle" className="h-4 w-4 text-drift-green" />
-              Instant Settlements
-            </span>
-            <span className="flex items-center gap-2 text-[12px] text-white">
-              <Icon name="Lock" className="h-4 w-4 text-[#60a5fa]" />
-              256-bit Encryption
-            </span>
-            <span className="flex items-center gap-2 text-[12px] text-white">
-              <Icon name="RefreshCw" className="h-4 w-4 text-[#a78bfa]" />
-              24/7 Support
-            </span>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-drift-border text-[12px] text-drift-muted">
+                  <th className="px-5 py-3 font-medium">Title</th>
+                  <th className="px-5 py-3 font-medium">Amount</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Link</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {links.map((link) => (
+                  <tr key={link.id} className="border-b border-drift-border/60 last:border-0">
+                    <td className="px-5 py-4 text-white">{link.title}</td>
+                    <td className="px-5 py-4 tabular-nums text-white">
+                      {link.amount} {link.currency}
+                    </td>
+                    <td className="px-5 py-4">
+                      <StatusBadge
+                        status={
+                          link.status === "paid"
+                            ? "Completed"
+                            : link.status === "active"
+                              ? "Pending"
+                              : "Failed"
+                        }
+                      />
+                    </td>
+                    <td className="px-5 py-4">
+                      <Link href={`/pay/${link.shortCode}`} className="text-brand-400 hover:underline">
+                        /pay/{link.shortCode}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      {link.status === "active" && (
+                        <button
+                          onClick={() => deactivate(link.id)}
+                          className="text-[12px] text-red-400 hover:underline"
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {links.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 text-center text-drift-muted">
+                      No payment links yet. Create your first link above.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </main>

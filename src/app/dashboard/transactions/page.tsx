@@ -1,161 +1,150 @@
 "use client";
 
-import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
-import { Icon, type IconName } from "@/components/icons";
-import { cn } from "@/lib/utils";
-import { transactionsQuickActions, recentLinks, TRANSACTIONS_TOTAL } from "@/lib/mock-data";
+import { Search, Download } from "lucide-react";
+import type { Transaction, TransactionStatus } from "@/lib/mock-data";
 
-const tileClass: Record<string, string> = {
-  purple: "tile-purple",
-  blue: "tile-blue",
-  green: "tile-green",
-  orange: "tile-orange",
-};
+const PER_PAGE = 10;
+const STATUSES = ["all", "completed", "pending", "failed", "confirming"];
 
-function FilterSelect({ label }: { label: string }) {
-  return (
-    <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">
-      {label}
-      <Icon name="ChevronDown" className="h-3.5 w-3.5 text-drift-muted" />
-    </button>
-  );
+function mapStatus(s: string): TransactionStatus {
+  const m: Record<string, TransactionStatus> = {
+    completed: "Completed",
+    confirming: "Pending",
+    pending: "Pending",
+    failed: "Failed",
+  };
+  return m[s] ?? "Pending";
+}
+
+function mapTx(row: Record<string, string>): Transaction {
+  return {
+    id: row.id.slice(0, 16).toUpperCase(),
+    customer: row.customerEmail ?? "Customer",
+    amount: Number(row.amount),
+    currency: row.currency,
+    status: mapStatus(row.status),
+    date: new Date(row.createdAt).toLocaleString(),
+  };
 }
 
 export default function TransactionsPage() {
-  const pages = [1, 2, 3];
+  const { status } = useSession();
+  const router = useRouter();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const load = useCallback(() => {
+    if (status !== "authenticated") return;
+
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(PER_PAGE),
+    });
+    if (statusFilter !== "all") params.set("status", statusFilter);
+
+    setLoading(true);
+    fetch(`/api/transactions?${params}`)
+      .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
+      .then((res) => {
+        setTransactions(res.data?.map(mapTx) ?? []);
+        setTotal(res.total ?? 0);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [status, page, statusFilter]);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/auth/login");
+      return;
+    }
+    load();
+  }, [status, router, load]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+
+  if (status === "loading" || (loading && transactions.length === 0)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <DashboardHeader
-        title="Transactions"
-        subtitle="View and manage all your transactions in one place."
-      />
+    <div className="min-h-screen">
+      <DashboardHeader title="Transactions" subtitle={`${total} total`} />
 
-      <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <div className="mb-4 flex flex-wrap items-center gap-2.5">
-            <FilterSelect label="All Status" />
-            <FilterSelect label="All Currencies" />
-            <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">
-              <Icon name="Calendar" className="h-3.5 w-3.5 text-drift-muted" />
-              May 1 – May 31, 2024
-              <Icon name="ChevronDown" className="h-3.5 w-3.5 text-drift-muted" />
-            </button>
-            <button className="ml-auto flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">
-              <Icon name="Download" className="h-3.5 w-3.5 text-drift-muted" />
+      <div className="space-y-6 p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search transactions..."
+              disabled
+              title="Search coming soon"
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-gray-500 focus:border-brand-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 focus:border-brand-500 focus:outline-none"
+            >
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s === "all" ? "All Status" : s.charAt(0).toUpperCase() + s.slice(1)}
+                </option>
+              ))}
+            </select>
+            <button className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 transition hover:bg-white/10">
+              <Download className="h-4 w-4" />
               Export
             </button>
           </div>
+        </div>
 
-          <div className="card-elevated p-5">
-            <TransactionsTable showChevron />
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03]">
+          <TransactionsTable data={transactions} />
+        </div>
 
-            <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-drift-border pt-4 sm:flex-row">
-              <span className="text-[12px] text-drift-muted">
-                Showing 1 to 10 of {TRANSACTIONS_TOTAL} results
-              </span>
-              <div className="flex items-center gap-1">
-                <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-drift-border text-drift-muted hover:text-white">
-                  <Icon name="ChevronLeft" className="h-4 w-4" />
-                </button>
-                {pages.map((p) => (
-                  <button
-                    key={p}
-                    className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-lg text-[12px]",
-                      p === 1
-                        ? "bg-[#7c3aed] font-semibold text-white"
-                        : "border border-drift-border text-drift-muted hover:text-white"
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-                <span className="px-1 text-[12px] text-drift-muted">…</span>
-                <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-drift-border text-[12px] text-drift-muted hover:text-white">
-                  36
-                </button>
-                <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-drift-border text-drift-muted hover:text-white">
-                  <Icon name="ChevronRight" className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
-
-        <aside className="hidden w-[300px] shrink-0 space-y-4 overflow-y-auto border-l border-drift-border p-5 xl:block">
-          <div>
-            <h3 className="text-[15px] font-semibold text-white">Create New</h3>
-            <p className="mt-0.5 text-[12px] text-drift-muted">Create payment links or invoices.</p>
-            <div className="mt-3 space-y-2.5">
-              {transactionsQuickActions.map((action) => (
-                <Link
-                  key={action.label}
-                  href={action.href}
-                  className="flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
-                >
-                  <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tileClass[action.color])}>
-                    <Icon name={action.icon as IconName} className="h-[18px] w-[18px]" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-white">{action.label}</span>
-                    <span className="block text-[11px] text-drift-muted">{action.description}</span>
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className="card-elevated p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-[14px] font-semibold text-white">Recent Links</h3>
-              <Link href="/dashboard/payment-links" className="text-[12px] text-[#a78bfa] hover:underline">
-                View all
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {recentLinks.map((link) => (
-                <div key={link.id} className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg tile-purple">
-                    <Icon name="Link2" className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-white">{link.title}</p>
-                    <p className="truncate text-[11px] text-drift-muted">{link.url}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[13px] font-medium text-white">{link.priceDisplay}</p>
-                    <p className="text-[11px] text-drift-muted">{link.date}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card-elevated p-4">
-            <h3 className="text-[14px] font-semibold text-white">Need Help?</h3>
-            <p className="mt-1 text-[12px] text-drift-muted">Visit our documentation or contact support.</p>
-            <div className="mt-3 flex gap-2">
-              <Link
-                href="/developers"
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-drift-border bg-drift-card py-2 text-[12px] font-medium text-white hover:bg-white/5"
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of {total}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-gray-400 transition hover:bg-white/5 disabled:opacity-40"
               >
-                <Icon name="BookOpen" className="h-3.5 w-3.5" />
-                View Docs
-              </Link>
-              <Link
-                href="/developers"
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-drift-border bg-drift-card py-2 text-[12px] font-medium text-white hover:bg-white/5"
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-gray-400 transition hover:bg-white/5 disabled:opacity-40"
               >
-                <Icon name="Headphones" className="h-3.5 w-3.5" />
-                Support
-              </Link>
+                Next
+              </button>
             </div>
           </div>
-        </aside>
+        )}
       </div>
-    </>
+    </div>
   );
 }

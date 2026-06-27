@@ -9,6 +9,14 @@ const tileClass: Record<StatCardData["color"], string> = {
   orange: "tile-orange",
 };
 
+export interface LiveStats {
+  totalGross?: number;
+  totalPayments?: number;
+  completed?: number;
+  pending?: number;
+  customers?: number;
+}
+
 function StatCard({ card }: { card: StatCardData }) {
   return (
     <div className="card-elevated p-4">
@@ -30,10 +38,36 @@ function StatCard({ card }: { card: StatCardData }) {
   );
 }
 
-export function StatsRow({ className }: { className?: string }) {
+function buildCards(live?: LiveStats | null): StatCardData[] {
+  if (!live) return statsCards;
+
+  return statsCards.map((card) => {
+    switch (card.label) {
+      case "Total Gross":
+        return {
+          ...card,
+          value: `$${(live.totalGross ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+        };
+      case "Total Payments":
+        return { ...card, value: String(live.totalPayments ?? 0) };
+      case "Completed":
+        return { ...card, value: String(live.completed ?? 0) };
+      case "Pending":
+        return { ...card, value: String(live.pending ?? 0), positive: (live.pending ?? 0) <= 14 };
+      case "Customers":
+        return { ...card, value: live.customers != null ? String(live.customers) : card.value };
+      default:
+        return card;
+    }
+  });
+}
+
+export function StatsRow({ live, className }: { live?: LiveStats | null; className?: string }) {
+  const cards = buildCards(live);
+
   return (
     <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5", className)}>
-      {statsCards.map((card) => (
+      {cards.map((card) => (
         <StatCard key={card.label} card={card} />
       ))}
     </div>

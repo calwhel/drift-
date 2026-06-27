@@ -11,16 +11,31 @@ import {
 } from "recharts";
 import { revenueData } from "@/lib/mock-data";
 
+interface ApiRevenuePoint {
+  date: string;
+  revenue: string | number;
+}
+
 interface RevenueChartProps {
-  data?: Array<{ label: string; value: number }>;
+  data?: ApiRevenuePoint[];
   height?: number;
 }
 
-export function RevenueChart({ data = revenueData, height = 280 }: RevenueChartProps) {
+export function RevenueChart({ data, height = 280 }: RevenueChartProps) {
+  const chartData = data?.length
+    ? data.map((d) => ({
+        label: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        value: Number(d.revenue),
+      }))
+    : revenueData;
+
+  const maxValue = Math.max(...chartData.map((d) => d.value), 1);
+  const yMax = Math.ceil(maxValue / 5000) * 5000 || 30000;
+
   return (
     <div className="w-full min-w-0" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.35} />
@@ -41,8 +56,7 @@ export function RevenueChart({ data = revenueData, height = 280 }: RevenueChartP
             tickLine={false}
             tick={{ fill: "#6b7280", fontSize: 11 }}
             tickFormatter={(v) => (v === 0 ? "$0" : `$${v / 1000}K`)}
-            domain={[0, 30000]}
-            ticks={[0, 5000, 10000, 20000, 30000]}
+            domain={[0, yMax]}
             width={44}
           />
           <Tooltip
