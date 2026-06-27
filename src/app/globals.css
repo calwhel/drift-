@@ -91,3 +91,32 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #2a2a38;
 }
+
+.text-gradient-brand {
+  background: linear-gradient(135deg, #c4b5fd 0%, #a855f7 35%, #7c3aed 65%, #6366f1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 28s linear infinite;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

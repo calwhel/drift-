@@ -5,6 +5,8 @@ interface HeroMockupProps {
   style?: React.CSSProperties;
 }
 
+const LINE_POINTS = "4,52 18,44 32,48 46,32 60,36 74,22 88,26 102,14 116,18 130,8 144,12 158,6 172,10 186,4";
+
 export function HeroMockup({ className, style }: HeroMockupProps) {
   const stats = [
     { label: "Total Gross", value: "$24,560", change: "+12.5%", up: true },
@@ -13,42 +15,42 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
     { label: "Pending", value: "14", change: "-2.1%", up: false },
   ];
 
-  const chartBars = [42, 58, 48, 72, 62, 85, 78, 92, 88, 95];
-
   const transactions = [
-    { id: "TXN_8B527", customer: "Alex Johnson", amount: "120 USDT", status: "Completed" },
-    { id: "TXN_d7e8e", customer: "Block Sol.", amount: "0.0021 BTC", status: "Completed" },
-    { id: "TXN_3a1b2", customer: "Jane Smith", amount: "75.50 USDT", status: "Pending" },
+    { id: "TXN_8B527", customer: "Sarah J.", amount: "120 USDT", status: "Completed" },
+    { id: "TXN_3A918", customer: "Michael C.", amount: "0.0045 BTC", status: "Completed" },
+    { id: "TXN_7F204", customer: "Emma W.", amount: "250 USDC", status: "Pending" },
   ];
 
   return (
     <div
       className={cn(
-        "relative w-[580px] overflow-hidden rounded-lg border border-[#2a2a38] bg-[#111118] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.7)]",
+        "relative w-[620px] overflow-hidden rounded-xl border border-[#2a2a38]/80 bg-[#111118] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.85),0_0_60px_rgba(124,58,237,0.15)]",
         className
       )}
       style={style}
     >
-      <div className="flex items-center gap-1.5 border-b border-[#1e1e2e] bg-[#0d0d14] px-3 py-2">
-        <div className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-        <div className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-        <div className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-        <div className="ml-3 h-5 flex-1 rounded bg-[#1a1a24] text-center text-[9px] leading-5 text-[#6b7280]">
+      <div className="flex items-center gap-1.5 border-b border-[#1e1e2e] bg-[#0d0d14] px-4 py-2.5">
+        <div className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+        <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
+        <div className="h-3 w-3 rounded-full bg-[#28c840]" />
+        <div className="ml-3 h-6 flex-1 rounded-md bg-[#1a1a24] text-center text-[10px] leading-6 text-[#6b7280]">
           app.drift.payment/dashboard
         </div>
       </div>
 
-      <div className="flex h-[340px]">
-        <div className="w-[130px] shrink-0 border-r border-[#1e1e2e] bg-[#0a0a0f] p-2.5">
-          <div className="mb-3 flex items-center gap-1.5">
-            <div className="flex h-5 w-5 items-center justify-center rounded bg-[#7c3aed] text-[8px] font-bold text-white">D</div>
-            <span className="text-[9px] font-bold text-white">DRIFT</span>
+      <div className="flex h-[380px]">
+        <div className="w-[140px] shrink-0 border-r border-[#1e1e2e] bg-[#0a0a0f] p-3">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#7c3aed] text-[9px] font-bold text-white">
+              D
+            </div>
+            <span className="text-[10px] font-bold tracking-wide text-white">DRIFT</span>
           </div>
           {["Overview", "Transactions", "Payment Links", "Wallets", "Customers"].map((item, i) => (
             <div
               key={item}
-              className={`mb-0.5 rounded px-2 py-1 text-[9px] ${
-                i === 0 ? "bg-[#7c3aed] text-white" : "text-[#6b7280]"
+              className={`mb-1 rounded-md px-2.5 py-1.5 text-[10px] ${
+                i === 0 ? "bg-[#7c3aed] font-medium text-white" : "text-[#6b7280]"
               }`}
             >
               {item}
@@ -56,32 +58,50 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
           ))}
         </div>
 
-        <div className="flex-1 overflow-hidden p-2.5">
-          <p className="text-[10px] font-semibold text-white">Overview</p>
+        <div className="flex-1 overflow-hidden p-3">
+          <p className="text-[11px] font-semibold text-white">Overview</p>
 
-          <div className="mt-2 grid grid-cols-4 gap-1.5">
+          <div className="mt-2.5 grid grid-cols-4 gap-2">
             {stats.map((s) => (
-              <div key={s.label} className="rounded border border-[#1e1e2e] bg-[#0d0d14] px-2 py-1.5">
-                <p className="text-[7px] text-[#6b7280]">{s.label}</p>
-                <p className="text-[10px] font-semibold tabular-nums text-white">{s.value}</p>
-                <p className={`text-[7px] ${s.up ? "text-[#22c55e]" : "text-[#ef4444]"}`}>{s.change}</p>
+              <div key={s.label} className="rounded-lg border border-[#1e1e2e] bg-[#0d0d14] px-2 py-2">
+                <p className="text-[8px] text-[#6b7280]">{s.label}</p>
+                <p className="text-[11px] font-semibold tabular-nums text-white">{s.value}</p>
+                <p className={`text-[8px] font-medium ${s.up ? "text-[#22c55e]" : "text-[#ef4444]"}`}>
+                  {s.change}
+                </p>
               </div>
             ))}
           </div>
 
-          <div className="mt-2 grid grid-cols-5 gap-1.5">
-            <div className="col-span-3 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
-              <p className="text-[8px] text-[#6b7280]">Payment Overview</p>
-              <div className="mt-1 flex h-[72px] items-end gap-px">
-                {chartBars.map((h, i) => (
-                  <div key={i} className="flex-1 rounded-t bg-[#7c3aed]/50" style={{ height: `${h}%` }} />
-                ))}
-              </div>
+          <div className="mt-2.5 grid grid-cols-5 gap-2">
+            <div className="col-span-3 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] p-2.5">
+              <p className="text-[9px] text-[#6b7280]">Payment Overview</p>
+              <svg viewBox="0 0 190 60" className="mt-1 h-[80px] w-full">
+                <defs>
+                  <linearGradient id="heroLineFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon fill="url(#heroLineFill)" points={`${LINE_POINTS} 186,60 4,60`} />
+                <polyline
+                  fill="none"
+                  stroke="#a855f7"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={LINE_POINTS}
+                />
+                {LINE_POINTS.split(" ").map((pt, i) => {
+                  const [x, y] = pt.split(",").map(Number);
+                  return <circle key={i} cx={x} cy={y} r="2.5" fill="#a855f7" stroke="#0d0d14" strokeWidth="1" />;
+                })}
+              </svg>
             </div>
 
-            <div className="col-span-2 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
-              <p className="text-[8px] text-[#6b7280]">Payment Methods</p>
-              <div className="relative mx-auto mt-1 h-14 w-14">
+            <div className="col-span-2 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] p-2.5">
+              <p className="text-[9px] text-[#6b7280]">Payment Methods</p>
+              <div className="relative mx-auto mt-2 h-16 w-16">
                 <svg viewBox="0 0 36 36" className="h-full w-full -rotate-90">
                   <circle cx="18" cy="18" r="14" fill="none" stroke="#1e1e2e" strokeWidth="4" />
                   <circle cx="18" cy="18" r="14" fill="none" stroke="#22c55e" strokeWidth="4" strokeDasharray="53 100" />
@@ -89,15 +109,15 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
                   <circle cx="18" cy="18" r="14" fill="none" stroke="#3b82f6" strokeWidth="4" strokeDasharray="9 100" strokeDashoffset="-75" />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-[7px] font-semibold text-white">$24k</span>
+                  <span className="text-[8px] font-semibold text-white">$24k</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="mt-2 rounded border border-[#1e1e2e] bg-[#0d0d14] p-2">
-            <p className="mb-1 text-[8px] text-[#6b7280]">Recent Transactions</p>
-            <table className="w-full text-[7px]">
+          <div className="mt-2.5 rounded-lg border border-[#1e1e2e] bg-[#0d0d14] p-2.5">
+            <p className="mb-1.5 text-[9px] text-[#6b7280]">Recent Transactions</p>
+            <table className="w-full text-[8px]">
               <thead>
                 <tr className="text-[#6b7280]">
                   <th className="pb-1 text-left font-medium">ID</th>
@@ -109,10 +129,10 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
               <tbody>
                 {transactions.map((tx) => (
                   <tr key={tx.id} className="border-t border-[#1e1e2e] text-white">
-                    <td className="py-0.5 font-mono text-[#7c3aed]">{tx.id}</td>
-                    <td className="py-0.5">{tx.customer}</td>
-                    <td className="py-0.5 tabular-nums">{tx.amount}</td>
-                    <td className={`py-0.5 ${tx.status === "Completed" ? "text-[#22c55e]" : "text-[#f59e0b]"}`}>
+                    <td className="py-1 font-mono text-[#a78bfa]">{tx.id}</td>
+                    <td className="py-1">{tx.customer}</td>
+                    <td className="py-1 tabular-nums">{tx.amount}</td>
+                    <td className={`py-1 font-medium ${tx.status === "Completed" ? "text-[#22c55e]" : "text-[#f59e0b]"}`}>
                       {tx.status}
                     </td>
                   </tr>
