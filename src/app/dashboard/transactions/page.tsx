@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
-import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
 import { Icon, type IconName } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -25,7 +24,6 @@ function FilterSelect({ label }: { label: string }) {
 }
 
 export default function TransactionsPage() {
-  const { setOpen } = useSidebar();
   const pages = [1, 2, 3];
 
   return (
@@ -33,7 +31,6 @@ export default function TransactionsPage() {
       <DashboardHeader
         title="Transactions"
         subtitle="View and manage all your transactions in one place."
-        onMenuClick={() => setOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">

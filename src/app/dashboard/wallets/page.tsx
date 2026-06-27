@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
-import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { WalletBalanceChart } from "@/components/dashboard/wallet-balance-chart";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon, type IconName } from "@/components/icons";
@@ -27,7 +26,6 @@ const tileClass: Record<string, string> = {
 };
 
 export default function WalletsPage() {
-  const { setOpen } = useSidebar();
   const [range, setRange] = useState("30D");
 
   return (
@@ -35,7 +33,6 @@ export default function WalletsPage() {
       <DashboardHeader
         title="Wallets"
         subtitle="Manage all your wallets and view balances."
-        onMenuClick={() => setOpen(true)}
         actions={
           <>
             <button className="flex items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#6d28d9]">

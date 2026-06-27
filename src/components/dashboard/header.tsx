@@ -1,6 +1,8 @@
 "use client";
 
 import { Icon } from "../icons";
+import { useAdminSidebar } from "../admin/sidebar-context";
+import { useSidebarOptional } from "./sidebar-context";
 
 interface DashboardHeaderProps {
   title: string;
@@ -12,12 +14,30 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ title, subtitle, emoji, onMenuClick, actions, children }: DashboardHeaderProps) {
+  const dashboardSidebar = useSidebarOptional();
+  const adminSidebar = useAdminSidebar();
+
+  const handleMenuClick =
+    onMenuClick ??
+    (() => {
+      if (dashboardSidebar) {
+        dashboardSidebar.toggle();
+      } else {
+        adminSidebar.setOpen(true);
+      }
+    });
+
   return (
     <header className="border-b border-drift-border bg-drift-bg">
       <div className="flex flex-col gap-3 px-4 py-4 lg:px-6">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <button onClick={onMenuClick} className="text-drift-muted lg:hidden">
+            <button
+              type="button"
+              onClick={handleMenuClick}
+              aria-label="Open navigation menu"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-drift-muted hover:bg-white/5 lg:hidden"
+            >
               <Icon name="Menu" className="h-5 w-5" />
             </button>
             <div className="min-w-0">

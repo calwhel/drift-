@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
-import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { StatsRow } from "@/components/stats-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { PaymentMethodsChart } from "@/components/dashboard/payment-methods-chart";
@@ -19,15 +18,12 @@ const tileClass: Record<string, string> = {
 };
 
 export default function DashboardOverviewPage() {
-  const { setOpen } = useSidebar();
-
   return (
     <>
       <DashboardHeader
         title="Overview"
         emoji="👋"
         subtitle="Here's what's happening with your business today."
-        onMenuClick={() => setOpen(true)}
         actions={
           <div className="hidden items-center gap-2 md:flex">
             <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card px-3 py-2 text-[12px] text-white">

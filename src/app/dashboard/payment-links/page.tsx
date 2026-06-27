@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { DashboardHeader } from "@/components/dashboard/header";
-import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -12,7 +11,6 @@ const CURRENCIES = ["USDT", "BTC", "USDC", "ETH", "SOL"];
 const EXPIRY_OPTIONS = ["1 day", "7 days", "14 days", "30 days", "Never"];
 
 export default function PaymentLinksPage() {
-  const { setOpen } = useSidebar();
   const [name, setName] = useState("Premium Membership");
   const [description, setDescription] = useState("Access to premium content and features.");
   const [amount, setAmount] = useState("120.00");
@@ -37,7 +35,6 @@ export default function PaymentLinksPage() {
       <DashboardHeader
         title="Create Payment Link"
         subtitle="Create a link and start accepting payments in minutes."
-        onMenuClick={() => setOpen(true)}
         actions={
           <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-drift-border bg-drift-card text-drift-muted hover:text-white">
             <Icon name="Sun" className="h-[18px] w-[18px]" />
