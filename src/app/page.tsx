@@ -167,8 +167,8 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Desktop: 4 cards in one row */}
-          <div className="mt-14 hidden grid-cols-4 gap-5 lg:grid">
+          {/* Desktop: feature cards */}
+          <div className="mt-14 hidden gap-5 sm:grid-cols-2 lg:grid xl:grid-cols-5">
             {landingFeatures.map((feature) => (
               <div
                 key={feature.title}
@@ -192,11 +192,11 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA ── */}
-      <section id="pricing" className="scroll-mt-20 border-t border-[#1e1e2e] py-20 lg:py-28">
+      <section id="get-started" className="scroll-mt-20 border-t border-[#1e1e2e] py-20 lg:py-28">
         <div className="mx-auto max-w-[1280px] px-5 text-center lg:px-8">
           <h2 className="text-[32px] font-bold text-white lg:text-[36px]">Ready to accept crypto payments?</h2>
           <p className="mt-3 text-[16px] text-[#9ca3af]">
-            Join thousands of businesses already using Drift Payment.
+            No monthly fees. Start free and only pay a small fee per transaction.
           </p>
           <Link
             href="/auth/signup"

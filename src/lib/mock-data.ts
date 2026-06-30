@@ -50,7 +50,7 @@ export const navItems = [
   { label: "API Keys", href: "/dashboard/api-keys", icon: "Key" },
   { label: "Invoices", href: "/dashboard/invoices", icon: "FileText" },
   { label: "Payouts", href: "/dashboard/payouts", icon: "CreditCard" },
-  { label: "Subscriptions", href: "/dashboard/subscriptions", icon: "RefreshCcw" },
+  { label: "Customer Subscriptions", href: "/dashboard/subscriptions", icon: "RefreshCcw" },
   { label: "Webhooks", href: "/dashboard/webhooks", icon: "Webhook" },
   { label: "Settings", href: "/dashboard/settings", icon: "Settings" },
 ];
@@ -221,6 +221,7 @@ export const trustedLogos = [
 export const landingFeatures = [
   { title: "Multiple Payment Options", description: "Accept BTC, USDT, USDC and more with ease.", icon: "Grid3x3" },
   { title: "Real-time Tracking", description: "Track payments in real-time with instant notifications.", icon: "Zap" },
+  { title: "Recurring Billing", description: "Offer subscription plans to your customers through Drift.", icon: "RefreshCcw" },
   { title: "Easy Integration", description: "Integrate in minutes with our API or payment links.", icon: "Puzzle" },
   { title: "Secure & Reliable", description: "Enterprise grade security you can count on.", icon: "Shield" },
 ];

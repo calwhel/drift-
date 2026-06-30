@@ -66,19 +66,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </nav>
 
         <div className="space-y-3 px-3 pb-3">
-          <div className="rounded-xl border border-[#7c3aed40] bg-gradient-to-b from-[#7c3aed1f] to-[#7c3aed0a] p-4 text-center">
-            <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-[#7c3aed29]">
-              <Icon name="Crown" className="h-[18px] w-[18px] text-[#c4b5fd]" />
-            </div>
-            <p className="text-[13px] font-semibold text-white">Upgrade to Pro</p>
-            <p className="mx-auto mt-1 max-w-[180px] text-[11px] leading-snug text-drift-muted">
-              Unlock advanced features and lower fees
-            </p>
-            <button className="mt-3 w-full rounded-lg bg-[#7c3aed] py-2 text-[12px] font-semibold text-white transition-colors hover:bg-[#6d28d9]">
-              Upgrade Now
-            </button>
-          </div>
-
           <button
             onClick={() => setDarkMode((v) => !v)}
             className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] text-drift-muted hover:bg-white/5"

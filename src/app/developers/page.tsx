@@ -11,7 +11,7 @@ const endpoints = [
   { method: "GET", path: "/api/wallets", desc: "Get wallet balances" },
   { method: "POST", path: "/api/withdrawals", desc: "Request a withdrawal" },
   { method: "POST", path: "/api/invoices", desc: "Create an invoice with payment link" },
-  { method: "POST", path: "/api/subscriptions", desc: "Create a subscription" },
+  { method: "POST", path: "/api/subscriptions", desc: "Create a recurring subscription plan for your customer" },
   { method: "POST", path: "/api/webhooks", desc: "Register a webhook endpoint" },
   { method: "POST", path: "/api/api-keys", desc: "Generate an API key" },
 ];
