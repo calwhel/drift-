@@ -2,12 +2,13 @@
 /**
  * Promotes a user to platform admin.
  * Usage:
- *   node scripts/seed-admin.cjs driftpayments@gmail.com
- *   node scripts/seed-admin.cjs driftpayments@gmail.com --soft
- *   ADMIN_EMAIL=driftpayments@gmail.com node scripts/seed-admin.cjs
+ *   node scripts/seed-admin.cjs admin@driftpayment.io
+ *   node scripts/seed-admin.cjs admin@driftpayment.io --soft
+ *   ADMIN_EMAIL=admin@driftpayment.io node scripts/seed-admin.cjs
  */
 const { neon } = require("@neondatabase/serverless");
 
+const DEFAULT_ADMIN_EMAIL = "admin@driftpayment.io";
 const soft = process.argv.includes("--soft");
 const emailArg = process.argv.find((a) => a.includes("@"));
 
@@ -19,7 +20,7 @@ async function main() {
     return;
   }
 
-  const targetEmail = (emailArg || process.env.ADMIN_EMAIL || "").toLowerCase().trim();
+  const targetEmail = (emailArg || process.env.ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).toLowerCase().trim();
 
   const sql = neon(url);
 
