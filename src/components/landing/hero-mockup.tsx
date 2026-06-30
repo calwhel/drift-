@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { LogoMarkCompact } from "./logo-mark";
 
 interface HeroMockupProps {
   className?: string;
@@ -40,12 +41,7 @@ export function HeroMockup({ className, style }: HeroMockupProps) {
 
       <div className="flex h-[380px]">
         <div className="w-[140px] shrink-0 border-r border-[#1e1e2e] bg-[#0a0a0f] p-3">
-          <div className="mb-4 flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#7c3aed] text-[9px] font-bold text-white">
-              D
-            </div>
-            <span className="text-[10px] font-bold tracking-wide text-white">DRIFT</span>
-          </div>
+          <LogoMarkCompact className="mb-4" />
           {["Overview", "Transactions", "Payment Links", "Wallets", "Customers"].map((item, i) => (
             <div
               key={item}

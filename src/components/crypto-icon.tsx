@@ -113,14 +113,25 @@ export function CryptoLogo({ symbol, className }: { symbol: Symbol; className?: 
   }
 }
 
+const glowMap: Record<string, string> = {
+  BTC: "drop-shadow-[0_0_18px_rgba(247,147,26,0.9)] drop-shadow-[0_0_36px_rgba(247,147,26,0.5)]",
+  USDT: "drop-shadow-[0_0_18px_rgba(38,161,123,0.85)] drop-shadow-[0_0_36px_rgba(38,161,123,0.45)]",
+  USDC: "drop-shadow-[0_0_18px_rgba(39,117,202,0.85)] drop-shadow-[0_0_36px_rgba(39,117,202,0.45)]",
+  ETH: "drop-shadow-[0_0_18px_rgba(98,126,234,0.85)] drop-shadow-[0_0_36px_rgba(98,126,234,0.45)]",
+  BNB: "drop-shadow-[0_0_18px_rgba(243,186,47,0.85)] drop-shadow-[0_0_36px_rgba(243,186,47,0.45)]",
+  SOL: "drop-shadow-[0_0_18px_rgba(0,255,163,0.7)] drop-shadow-[0_0_36px_rgba(220,31,255,0.4)]",
+};
+
 export function CryptoIcon({
   symbol,
   size = "sm",
   className,
+  glow = false,
 }: {
   symbol: string;
   size?: "xs" | "sm" | "md" | "lg" | "xl";
   className?: string;
+  glow?: boolean;
 }) {
   const sizeMap = {
     xs: "h-5 w-5",
@@ -130,8 +141,18 @@ export function CryptoIcon({
     xl: "h-[72px] w-[72px]",
   };
 
+  if (glow) {
+    const key = symbol.toUpperCase();
+    return (
+      <CryptoLogo
+        symbol={symbol}
+        className={cn("shrink-0", sizeMap[size], glowMap[key], className)}
+      />
+    );
+  }
+
   return (
-    <span className={cn("inline-flex shrink-0 overflow-hidden rounded-full shadow-sm", sizeMap[size], className)}>
+    <span className={cn("inline-flex shrink-0 overflow-hidden rounded-full", sizeMap[size], className)}>
       <CryptoLogo symbol={symbol} className="h-full w-full" />
     </span>
   );
