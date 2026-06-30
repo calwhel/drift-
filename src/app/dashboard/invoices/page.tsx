@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
+import { USDT_NETWORKS, getNetworkLabel, type UsdtNetwork } from "@/lib/constants";
 
 interface Invoice {
   id: string;
@@ -25,6 +26,7 @@ export default function InvoicesPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
+  const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("TRC20");
   const [loading, setLoading] = useState(false);
   const [lastLink, setLastLink] = useState("");
 
@@ -43,6 +45,7 @@ export default function InvoicesPage() {
         customer_email: customerEmail,
         customer_name: customerName || undefined,
         currency,
+        network: currency === "USDT" ? usdtNetwork : undefined,
         items: [{ description: description || "Invoice item", quantity: 1, unit_price: Number(amount) }],
       }),
     });
@@ -79,6 +82,27 @@ export default function InvoicesPage() {
                 <option value="BTC">BTC</option>
               </select>
             </div>
+            {currency === "USDT" && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {USDT_NETWORKS.map((n) => (
+                  <button
+                    key={n.network}
+                    type="button"
+                    onClick={() => setUsdtNetwork(n.network)}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs ${
+                      usdtNetwork === n.network
+                        ? "border-[#7c3aed] bg-[#7c3aed18] text-white"
+                        : "border-drift-border text-drift-muted"
+                    }`}
+                  >
+                    {n.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {currency === "USDT" && (
+              <p className="text-2xs text-drift-muted">Network: {getNetworkLabel("USDT", usdtNetwork)}</p>
+            )}
             <button onClick={handleCreate} disabled={loading} className="btn-primary">Create invoice</button>
             {lastLink && <p className="text-xs text-drift-green">Payment link: <Link href={lastLink} className="underline">{lastLink}</Link></p>}
           </div>

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { useSession } from "next-auth/react";
+import { cn, getUserInitials } from "@/lib/utils";
 import { navItems } from "@/lib/mock-data";
 import { LogoMark } from "../landing/logo-mark";
 import { Icon, type IconName } from "../icons";
@@ -16,6 +17,9 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [darkMode, setDarkMode] = useState(true);
+  const { data: session } = useSession();
+  const displayName = session?.user?.name ?? session?.user?.email ?? "Account";
+  const initials = getUserInitials(session?.user?.name ?? session?.user?.email);
 
   const isActive = (href: string) => {
     if (href === "/dashboard/overview") {
@@ -91,10 +95,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
           <div className="flex items-center gap-2.5 rounded-lg border border-drift-border bg-drift-card px-3 py-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] text-[11px] font-semibold text-white">
-              JD
+              {initials}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-medium text-white">John Doe</p>
+              <p className="truncate text-[13px] font-medium text-white">{displayName}</p>
               <p className="truncate text-[11px] text-drift-muted">Business Account</p>
             </div>
           </div>

@@ -5,8 +5,8 @@ import { nanoid } from "nanoid";
 import { db, invoices, invoiceItems, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { deriveDepositAddress, getNextDerivationIndex } from "@/lib/wallet/derive";
-import { getDefaultWalletForCurrency } from "@/lib/wallet/helpers";
-import { NETWORKS, SupportedCurrency } from "@/lib/constants";
+import { getWalletForCurrencyAndNetwork } from "@/lib/wallet/helpers";
+import { defaultNetworkForCurrency } from "@/lib/constants";
 
 const itemSchema = z.object({
   description: z.string(),
@@ -18,6 +18,7 @@ const createSchema = z.object({
   customer_email: z.string().email(),
   customer_name: z.string().optional(),
   currency: z.string().default("USDT"),
+  network: z.string().optional(),
   due_date: z.string().datetime().optional(),
   notes: z.string().optional(),
   items: z.array(itemSchema).min(1),
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const data = createSchema.parse(body);
     const currency = data.currency.toUpperCase();
-    const network = NETWORKS[currency as SupportedCurrency]?.network ?? "TRC20";
+    const network = data.network ?? defaultNetworkForCurrency(currency);
 
     const subtotal = data.items.reduce(
       (s, i) => s + i.quantity * i.unit_price,
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
     let depositAddress: string;
     let walletId: string | null = null;
 
-    const userWallet = await getDefaultWalletForCurrency(auth.userId, currency);
+    const userWallet = await getWalletForCurrencyAndNetwork(auth.userId, currency, network);
     if (userWallet) {
       depositAddress = userWallet.address;
       walletId = userWallet.id;

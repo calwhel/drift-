@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { LogoMark } from "@/components/landing/logo-mark";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { getNetworkLabel } from "@/lib/constants";
-import { checkoutFeatures, demoCheckout } from "@/lib/mock-data";
+import { checkoutFeatures } from "@/lib/mock-data";
 
 interface PaymentLinkData {
   title: string;
@@ -33,14 +34,21 @@ export default function CheckoutPage() {
   const router = useRouter();
   const shortcode = params.shortcode as string;
   const [link, setLink] = useState<PaymentLinkData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [timeLeft, setTimeLeft] = useState(899);
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoadError(null);
+    setLink(null);
     fetch(`/api/payment-links/public/${shortcode}`)
       .then(async (r) => {
-        if (!r.ok) throw new Error("Not found");
+        if (r.status === 410) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Payment link expired");
+        }
+        if (!r.ok) throw new Error("Payment link not found");
         return r.json();
       })
       .then((data: PaymentLinkData) => {
@@ -51,18 +59,8 @@ export default function CheckoutPage() {
         }
         if (data.status === "paid") setPaymentStatus("completed");
       })
-      .catch(() => {
-        setLink({
-          title: demoCheckout.title,
-          description: demoCheckout.description,
-          amount: demoCheckout.amount,
-          currency: demoCheckout.currency,
-          network: demoCheckout.network,
-          deposit_address: demoCheckout.deposit_address,
-          redirect_url: null,
-          expiry: null,
-          status: "active",
-        });
+      .catch((err) => {
+        setLoadError(err instanceof Error ? err.message : "Payment link not found");
       });
   }, [shortcode]);
 
@@ -80,10 +78,10 @@ export default function CheckoutPage() {
   }, [shortcode, router]);
 
   useEffect(() => {
-    if (!link || paymentStatus === "completed") return;
+    if (!link || loadError || paymentStatus === "completed") return;
     const interval = setInterval(pollStatus, 5000);
     return () => clearInterval(interval);
-  }, [link, paymentStatus, pollStatus]);
+  }, [link, loadError, paymentStatus, pollStatus]);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
@@ -97,6 +95,19 @@ export default function CheckoutPage() {
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
   };
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#08080d] px-4 text-center">
+        <LogoMark />
+        <h1 className="mt-8 text-xl font-bold text-white">Payment link unavailable</h1>
+        <p className="mt-2 max-w-md text-sm text-drift-muted">{loadError}</p>
+        <Link href="/" className="mt-6 text-sm font-medium text-[#a78bfa] hover:underline">
+          Go to Drift
+        </Link>
+      </div>
+    );
+  }
 
   if (!link) {
     return (
@@ -136,8 +147,8 @@ export default function CheckoutPage() {
             </div>
 
             <div className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-[#7c3aed40] bg-[#7c3aed1f] px-3 py-1 text-[11px] font-medium text-[#c4b5fd]">
-              <Icon name="Crown" className="h-3.5 w-3.5" />
-              {demoCheckout.badge}
+              <Icon name="ShieldCheck" className="h-3.5 w-3.5" />
+              Secure checkout
             </div>
 
             <h1 className="mt-3 text-[22px] font-bold tracking-tight text-white">{link.title}</h1>
@@ -160,7 +171,6 @@ export default function CheckoutPage() {
                 {link.amount} <span className="text-base font-semibold text-drift-muted">{link.currency}</span>
               </p>
               <p className="mt-0.5 text-[12px] text-drift-muted">{networkLabel}</p>
-              <p className="text-[12px] text-drift-muted">≈ ${demoCheckout.usdApprox} USD</p>
             </div>
           </div>
 
@@ -284,7 +294,7 @@ export default function CheckoutPage() {
             <span>Fast • Secure • Global</span>
             <span className="text-drift-border">|</span>
             <span>Need Help?</span>
-            <a href="/developers" className="font-medium text-[#a78bfa] hover:underline">
+            <a href="mailto:support@driftpayment.io" className="font-medium text-[#a78bfa] hover:underline">
               Contact Support
             </a>
           </div>

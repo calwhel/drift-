@@ -28,10 +28,12 @@ function StatCard({ card }: { card: StatCardData }) {
       <p className="mt-3 text-[12px] text-drift-muted">{card.label}</p>
       <p className="mt-1 text-[22px] font-semibold tracking-tight tabular-nums text-white">{card.value}</p>
       <div className="mt-1.5 flex items-center gap-1 text-[11px]">
-        <span className={cn("flex items-center gap-0.5 font-medium", card.positive ? "text-drift-green" : "text-drift-red")}>
-          <Icon name={card.positive ? "ArrowUpRight" : "ArrowDownRight"} className="h-3 w-3" />
-          {card.change.replace(/^[+-]/, "")}
-        </span>
+        {card.change ? (
+          <span className={cn("flex items-center gap-0.5 font-medium", card.positive ? "text-drift-green" : "text-drift-red")}>
+            <Icon name={card.positive ? "ArrowUpRight" : "ArrowDownRight"} className="h-3 w-3" />
+            {card.change.replace(/^[+-]/, "")}
+          </span>
+        ) : null}
         <span className="text-drift-muted">{card.sub}</span>
       </div>
     </div>
@@ -42,20 +44,27 @@ function buildCards(live?: LiveStats | null): StatCardData[] {
   if (!live) return statsCards;
 
   return statsCards.map((card) => {
+    const liveSub = "from your account";
     switch (card.label) {
       case "Total Gross":
         return {
           ...card,
           value: `$${(live.totalGross ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+          change: "",
+          sub: liveSub,
         };
       case "Total Payments":
-        return { ...card, value: String(live.totalPayments ?? 0) };
+        return { ...card, value: String(live.totalPayments ?? 0), change: "", sub: liveSub };
       case "Completed":
-        return { ...card, value: String(live.completed ?? 0) };
+        return { ...card, value: String(live.completed ?? 0), change: "", sub: liveSub };
       case "Pending":
-        return { ...card, value: String(live.pending ?? 0), positive: (live.pending ?? 0) <= 14 };
-      case "Customers":
-        return { ...card, value: live.customers != null ? String(live.customers) : card.value };
+        return {
+          ...card,
+          value: String(live.pending ?? 0),
+          positive: (live.pending ?? 0) <= 14,
+          change: "",
+          sub: liveSub,
+        };
       default:
         return card;
     }
@@ -66,7 +75,7 @@ export function StatsRow({ live, className }: { live?: LiveStats | null; classNa
   const cards = buildCards(live);
 
   return (
-    <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5", className)}>
+    <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4", className)}>
       {cards.map((card) => (
         <StatCard key={card.label} card={card} />
       ))}

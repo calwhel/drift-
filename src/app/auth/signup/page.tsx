@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LogoMark } from "@/components/landing/logo-mark";
 
@@ -20,12 +20,32 @@ function parseError(data: unknown): string {
 }
 
 export default function SignupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f] text-drift-muted">
+          Loading…
+        </div>
+      }
+    >
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const prefill = searchParams.get("email");
+    if (prefill) setEmail(prefill);
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,7 +75,12 @@ export default function SignupPage() {
         return;
       }
 
-      router.push("/auth/login?registered=1");
+      const callbackUrl = searchParams.get("callbackUrl");
+      const loginQuery = new URLSearchParams({ registered: "1" });
+      if (callbackUrl?.startsWith("/")) {
+        loginQuery.set("callbackUrl", callbackUrl);
+      }
+      router.push(`/auth/login?${loginQuery.toString()}`);
       router.refresh();
     } catch (err) {
       setError(

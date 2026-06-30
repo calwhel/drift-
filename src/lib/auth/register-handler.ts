@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db, users } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifyNewSignup } from "@/lib/telegram";
+import { ensureOrganizationForUser } from "@/lib/org";
 
 const schema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -78,6 +79,8 @@ export async function POST(req: Request) {
       });
 
     notifyNewSignup({ email: user.email, businessName: user.businessName });
+
+    await ensureOrganizationForUser(user.id, user.businessName);
 
     return NextResponse.json(
       { id: user.id, email: user.email, message: "Account created successfully" },

@@ -45,8 +45,6 @@ export const navItems = [
   { label: "Transactions", href: "/dashboard/transactions", icon: "ArrowRightLeft" },
   { label: "Payment Links", href: "/dashboard/payment-links", icon: "Link" },
   { label: "Wallets", href: "/dashboard/wallets", icon: "Wallet" },
-  { label: "Customers", href: "/dashboard/customers", icon: "Users" },
-  { label: "Analytics", href: "/dashboard/analytics", icon: "BarChart3" },
   { label: "API Keys", href: "/dashboard/api-keys", icon: "Key" },
   { label: "Invoices", href: "/dashboard/invoices", icon: "FileText" },
   { label: "Payouts", href: "/dashboard/payouts", icon: "CreditCard" },
@@ -71,7 +69,6 @@ export const statsCards: StatCardData[] = [
   { label: "Total Payments", value: "356", change: "+8.2%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "CreditCard", color: "blue" },
   { label: "Completed", value: "342", change: "+9.1%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "CheckCircle", color: "green" },
   { label: "Pending", value: "14", change: "-2.1%", positive: false, sub: "vs Apr 1 – Apr 30", icon: "Clock", color: "orange" },
-  { label: "Customers", value: "128", change: "+15.3%", positive: true, sub: "vs Apr 1 – Apr 30", icon: "Users", color: "purple" },
 ];
 
 export const revenueData = [
@@ -166,14 +163,14 @@ export const overviewQuickActions: QuickAction[] = [
   { label: "Create Payment Link", icon: "Link2", color: "purple", href: "/dashboard/payment-links" },
   { label: "Create Invoice", icon: "FileText", color: "blue", href: "/dashboard/invoices" },
   { label: "Manage Wallets", icon: "Wallet", color: "green", href: "/dashboard/wallets" },
-  { label: "Add Customer", icon: "Users", color: "orange", href: "/dashboard/customers" },
+  { label: "Add Customer", icon: "Users", color: "orange", href: "/dashboard/payment-links" },
 ];
 
 export const transactionsQuickActions: QuickAction[] = [
   { label: "Create Payment Link", description: "Get paid with a simple link", icon: "Link2", color: "purple", href: "/dashboard/payment-links" },
   { label: "Create Invoice", description: "Send a professional invoice", icon: "FileText", color: "blue", href: "/dashboard/invoices" },
   { label: "Create Wallet", description: "Generate a new wallet", icon: "Wallet", color: "green", href: "/dashboard/wallets" },
-  { label: "Add Customer", description: "Add a customer profile", icon: "Users", color: "orange", href: "/dashboard/customers" },
+  { label: "Add Customer", description: "Create a payment link", icon: "Users", color: "orange", href: "/dashboard/payment-links" },
 ];
 
 export const walletQuickActions: QuickAction[] = [

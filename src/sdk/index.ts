@@ -76,7 +76,7 @@ export class DriftClient {
   };
 
   withdrawals = {
-    create: (params: { amount: number; currency: string; to_address: string }) =>
+    create: (params: { wallet_id: string; amount: number; to_address: string }) =>
       this.request("POST", "/api/withdrawals", params),
     list: () => this.request("GET", "/api/withdrawals"),
   };

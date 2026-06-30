@@ -23,6 +23,8 @@ function LoginForm() {
 
   const registered = searchParams.get("registered") === "1";
   const authError = searchParams.get("error");
+  const callbackUrl = searchParams.get("callbackUrl");
+  const safeCallback = callbackUrl?.startsWith("/") ? callbackUrl : "/dashboard/overview";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +68,7 @@ function LoginForm() {
       }
 
       // Always stay on the current host — never follow a stale NEXTAUTH_URL redirect.
-      window.location.assign("/dashboard/overview");
+      window.location.assign(safeCallback);
     } catch (err) {
       setError(
         err instanceof Error
