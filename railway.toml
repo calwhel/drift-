@@ -9,6 +9,4 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
 
-# Schedule payment polling every minute (Railway cron)
-# Configure in Railway dashboard: Cron → GET $NEXTAUTH_URL/api/cron/poll-payments
-# Header: Authorization: Bearer $CRON_SECRET
+# Payment polling runs automatically inside the Next.js server (see src/lib/payment-poller.ts)

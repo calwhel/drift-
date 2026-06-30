@@ -8,7 +8,7 @@ import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon, type IconName } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { MERCHANT_WALLET_NETWORKS } from "@/lib/constants";
-import { walletQuickActions, recentActivity } from "@/lib/mock-data";
+import { walletQuickActions } from "@/lib/mock-data";
 
 const RANGES = ["7D", "30D", "90D", "1Y"];
 
@@ -37,6 +37,14 @@ interface WalletRow {
   label: string | null;
 }
 
+interface ActivityItem {
+  title: string;
+  party: string;
+  amount: string;
+  positive: boolean;
+  date: string;
+}
+
 export default function WalletsPage() {
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
@@ -51,6 +59,55 @@ export default function WalletsPage() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+
+  const loadActivity = useCallback(() => {
+    Promise.all([
+      fetch("/api/transactions?limit=8&page=1").then((r) => (r.ok ? r.json() : { data: [] })),
+      fetch("/api/withdrawals").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([txRes, withdrawals]) => {
+        type SortableActivity = ActivityItem & { sortAt: number };
+        const items: SortableActivity[] = [];
+
+        for (const tx of txRes.data ?? []) {
+          const completed = tx.status === "completed";
+          items.push({
+            title: completed ? "Payment Received" : "Payment",
+            party: tx.customerEmail ? `From: ${tx.customerEmail}` : "Incoming payment",
+            amount: `${completed ? "+" : ""}${Number(tx.amount).toFixed(4)} ${tx.currency}`,
+            positive: completed,
+            date: new Date(tx.createdAt).toLocaleString(),
+            sortAt: new Date(tx.createdAt).getTime(),
+          });
+        }
+
+        const withdrawalRows = Array.isArray(withdrawals) ? withdrawals : [];
+        for (const w of withdrawalRows.slice(0, 8)) {
+          const addr = w.toAddress as string;
+          items.push({
+            title: "Withdrawal",
+            party: `To: ${addr.slice(0, 6)}…${addr.slice(-4)}`,
+            amount: `-${Number(w.amount).toFixed(4)} ${w.currency}`,
+            positive: false,
+            date: new Date(w.createdAt).toLocaleString(),
+            sortAt: new Date(w.createdAt).getTime(),
+          });
+        }
+
+        items.sort((a, b) => b.sortAt - a.sortAt);
+        setActivity(
+          items.slice(0, 4).map((item) => ({
+            title: item.title,
+            party: item.party,
+            amount: item.amount,
+            positive: item.positive,
+            date: item.date,
+          }))
+        );
+      })
+      .catch(() => setActivity([]));
+  }, []);
 
   const load = useCallback(() => {
     fetch("/api/wallets")
@@ -60,7 +117,8 @@ export default function WalletsPage() {
         setTotalBalance(d.totalBalance ?? 0);
       })
       .catch(() => {});
-  }, []);
+    loadActivity();
+  }, [loadActivity]);
 
   useEffect(() => {
     load();
@@ -356,28 +414,37 @@ export default function WalletsPage() {
                 </Link>
               </div>
               <div className="space-y-4">
-                {recentActivity.map((a, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-full",
-                        a.positive ? "bg-[#22c55e1f] text-[#4ade80]" : "bg-[#ef44441f] text-[#f87171]"
-                      )}
-                    >
-                      <Icon name={a.positive ? "ArrowDownLeft" : "ArrowUpRight"} className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium text-white">{a.title}</p>
-                      <p className="truncate text-[11px] text-drift-muted">{a.party}</p>
+                {activity.length > 0 ? (
+                  activity.map((a, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <span
+                        className={cn(
+                          "flex h-9 w-9 items-center justify-center rounded-full",
+                          a.positive ? "bg-[#22c55e1f] text-[#4ade80]" : "bg-[#ef44441f] text-[#f87171]"
+                        )}
+                      >
+                        <Icon name={a.positive ? "ArrowDownLeft" : "ArrowUpRight"} className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium text-white">{a.title}</p>
+                        <p className="truncate text-[11px] text-drift-muted">{a.party}</p>
+                      </div>
+                      <div className="text-right">
+                        <p
+                          className={cn(
+                            "text-[13px] font-medium tabular-nums",
+                            a.positive ? "text-drift-green" : "text-drift-red"
+                          )}
+                        >
+                          {a.amount}
+                        </p>
+                        <p className="text-[11px] text-drift-muted">{a.date}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className={cn("text-[13px] font-medium tabular-nums", a.positive ? "text-drift-green" : "text-drift-red")}>
-                        {a.amount}
-                      </p>
-                      <p className="text-[11px] text-drift-muted">{a.date}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-[13px] text-drift-muted">No recent activity yet</p>
+                )}
               </div>
             </div>
           </div>

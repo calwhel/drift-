@@ -1,30 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { pollAllNetworks } from "@/lib/blockchain/poller";
-import { processPendingWebhooks } from "@/lib/webhooks";
-import { processPendingSettlements } from "@/lib/wallet/settlement";
-import { processPendingWithdrawals } from "@/lib/wallet/withdraw";
+import { NextResponse } from "next/server";
+import { runPaymentPollCycle } from "@/lib/payment-poller";
 
-export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization");
-  if (secret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/** Manual trigger — payment polling runs automatically via the internal poller. */
+export async function GET() {
+  const result = await runPaymentPollCycle();
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error ?? "Poll failed" }, { status: 500 });
   }
 
-  try {
-    const detected = await pollAllNetworks();
-    const settlements = await processPendingSettlements();
-    const withdrawalsProcessed = await processPendingWithdrawals();
-    await processPendingWebhooks();
-
-    return NextResponse.json({
-      ok: true,
-      detected,
-      settlements,
-      withdrawals: withdrawalsProcessed,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error("Cron poll error:", err);
-    return NextResponse.json({ error: "Poll failed" }, { status: 500 });
-  }
+  return NextResponse.json(result);
 }

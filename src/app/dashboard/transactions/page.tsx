@@ -37,9 +37,20 @@ export default function TransactionsPage() {
   const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter]);
 
   const load = useCallback(() => {
     if (status !== "authenticated") return;
@@ -49,6 +60,7 @@ export default function TransactionsPage() {
       limit: String(PER_PAGE),
     });
     if (statusFilter !== "all") params.set("status", statusFilter);
+    if (debouncedSearch) params.set("search", debouncedSearch);
 
     setLoading(true);
     fetch(`/api/transactions?${params}`)
@@ -59,7 +71,7 @@ export default function TransactionsPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [status, page, statusFilter]);
+  }, [status, page, statusFilter, debouncedSearch]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -90,18 +102,15 @@ export default function TransactionsPage() {
             <input
               type="text"
               placeholder="Search transactions..."
-              disabled
-              title="Search coming soon"
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-gray-500 focus:border-brand-500 focus:outline-none disabled:opacity-50"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-gray-500 focus:border-brand-500 focus:outline-none"
             />
           </div>
           <div className="flex items-center gap-3">
             <select
               value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 focus:border-brand-500 focus:outline-none"
             >
               {STATUSES.map((s) => (
@@ -118,7 +127,15 @@ export default function TransactionsPage() {
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.03]">
+          {loading && transactions.length > 0 ? (
+            <div className="px-4 py-2 text-xs text-gray-500">Searching…</div>
+          ) : null}
           <TransactionsTable data={transactions} />
+          {!loading && transactions.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">
+              {debouncedSearch ? `No transactions matching "${debouncedSearch}"` : "No transactions yet"}
+            </p>
+          )}
         </div>
 
         {totalPages > 1 && (
