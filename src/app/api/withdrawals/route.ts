@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
-import { db, withdrawals, wallets } from "@/lib/db";
+import { db, withdrawals, wallets, users } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import { validateWalletAddress } from "@/lib/wallet/generate";
+import { notifyWithdrawalRequested } from "@/lib/telegram";
 
 const createSchema = z.object({
   wallet_id: z.string().uuid(),
@@ -82,6 +83,20 @@ export async function POST(req: NextRequest) {
       .returning();
 
     await logAudit(auth.userId, "withdrawal.created", "withdrawal", withdrawal.id);
+
+    const [merchant] = await db
+      .select({ businessName: users.businessName })
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+
+    notifyWithdrawalRequested({
+      amount: withdrawal.amount,
+      currency: withdrawal.currency,
+      network: withdrawal.network,
+      toAddress: withdrawal.toAddress,
+      merchantName: merchant?.businessName,
+    });
 
     return NextResponse.json(withdrawal, { status: 201 });
   } catch (err) {

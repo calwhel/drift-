@@ -3,6 +3,7 @@ import { db, settlements, wallets } from "../db";
 import { getPlatformFeeAddress } from "../platform-wallets";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
+import { notifyFeeSettlementFailed, notifyFeeSettlementSuccess } from "../telegram";
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -135,6 +136,14 @@ export async function processPendingSettlements(): Promise<number> {
             .update(settlements)
             .set({ status: "failed", error: "Missing custodial wallet key" })
             .where(eq(settlements.id, settlement.id));
+          if (settlement.type === "platform_fee") {
+            notifyFeeSettlementFailed({
+              network: settlement.network,
+              amount: settlement.amount,
+              currency: settlement.currency,
+              error: "Missing custodial wallet key",
+            });
+          }
           continue;
         }
 
@@ -223,15 +232,32 @@ export async function processPendingSettlements(): Promise<number> {
         .update(settlements)
         .set({ status: "completed", txHash, completedAt: new Date() })
         .where(eq(settlements.id, settlement.id));
+      if (settlement.type === "platform_fee" && txHash) {
+        notifyFeeSettlementSuccess({
+          network: settlement.network,
+          amount: settlement.amount,
+          currency: settlement.currency,
+          txHash,
+        });
+      }
       processed++;
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Settlement failed";
       await db
         .update(settlements)
         .set({
           status: "failed",
-          error: err instanceof Error ? err.message : "Settlement failed",
+          error: errorMessage,
         })
         .where(eq(settlements.id, settlement.id));
+      if (settlement.type === "platform_fee") {
+        notifyFeeSettlementFailed({
+          network: settlement.network,
+          amount: settlement.amount,
+          currency: settlement.currency,
+          error: errorMessage,
+        });
+      }
     }
   }
 

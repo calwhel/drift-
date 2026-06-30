@@ -1,9 +1,10 @@
 import { eq, and, desc } from "drizzle-orm";
-import { db, paymentLinks, transactions, wallets } from "../db";
+import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
+import { notifyPaymentCompleted } from "../telegram";
 
 interface DetectedPayment {
   txHash: string;
@@ -470,4 +471,19 @@ async function completeTransaction(transactionId: string) {
   }
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");
+
+  const [merchant] = await db
+    .select({ businessName: users.businessName })
+    .from(users)
+    .where(eq(users.id, tx.userId))
+    .limit(1);
+
+  notifyPaymentCompleted({
+    amount: tx.amount,
+    currency: tx.currency,
+    network: tx.network,
+    merchantName: merchant?.businessName ?? "Unknown",
+    feeAmount: fee,
+    netAmount: net,
+  });
 }

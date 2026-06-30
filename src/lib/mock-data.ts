@@ -52,6 +52,7 @@ export const navItems = [
   { label: "Payouts", href: "/dashboard/payouts", icon: "CreditCard" },
   { label: "Customer Subscriptions", href: "/dashboard/subscriptions", icon: "RefreshCcw" },
   { label: "Webhooks", href: "/dashboard/webhooks", icon: "Webhook" },
+  { label: "Help & Contact", href: "/dashboard/support", icon: "Headphones" },
   { label: "Settings", href: "/dashboard/settings", icon: "Settings" },
 ];
 
