@@ -7,15 +7,16 @@ import { WalletBalanceChart } from "@/components/dashboard/wallet-balance-chart"
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon, type IconName } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import { MERCHANT_WALLET_NETWORKS } from "@/lib/constants";
+import { MERCHANT_WALLET_NETWORKS, getNetworkLabel } from "@/lib/constants";
 import { walletQuickActions } from "@/lib/mock-data";
 
 const RANGES = ["7D", "30D", "90D", "1Y"];
 
 const networkBadge: Record<string, string> = {
   TRC20: "bg-[#7c3aed29] text-[#c4b5fd]",
-  Bitcoin: "bg-[#f59e0b29] text-[#fbbf24]",
   ERC20: "bg-[#3b82f629] text-[#93c5fd]",
+  SPL: "bg-[#14b8a629] text-[#5eead4]",
+  Bitcoin: "bg-[#f59e0b29] text-[#fbbf24]",
   BEP20: "bg-[#eab30829] text-[#fde047]",
   Solana: "bg-[#14b8a629] text-[#5eead4]",
 };
@@ -314,7 +315,9 @@ export default function WalletsPage() {
                                     {w.walletType === "generated" ? "Custodial" : "Connected"}
                                   </span>
                                 </div>
-                                <span className="text-[11px] text-drift-muted">{w.currency}</span>
+                                <span className="text-[11px] text-drift-muted">
+                                  {getNetworkLabel(w.currency, w.network)}
+                                </span>
                               </div>
                             </div>
                           </td>

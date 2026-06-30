@@ -6,7 +6,7 @@ import bs58 from "bs58";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { eq, sql } from "drizzle-orm";
 import { db, derivationCounter } from "../db";
-import { NETWORKS, type SupportedCurrency } from "../constants";
+import { defaultNetworkForCurrency } from "../constants";
 
 const DERIVATION_PATHS: Record<string, (index: number) => string> = {
   ERC20: (i) => `m/44'/60'/0'/0/${i}`,
@@ -14,6 +14,7 @@ const DERIVATION_PATHS: Record<string, (index: number) => string> = {
   TRC20: (i) => `m/44'/195'/0'/0/${i}`,
   Bitcoin: (i) => `m/84'/0'/0'/0/${i}`,
   Solana: (i) => `m/44'/501'/${i}'/0'`,
+  SPL: (i) => `m/44'/501'/${i}'/0'`,
 };
 
 function getMasterKey(): HDKey {
@@ -54,8 +55,7 @@ export function deriveDepositAddress(
   currency: string,
   network: string
 ): string {
-  const cfg = NETWORKS[currency as SupportedCurrency];
-  const net = network || cfg?.network || "TRC20";
+  const net = network || defaultNetworkForCurrency(currency);
   const pathFn = DERIVATION_PATHS[net];
   if (!pathFn) {
     throw new Error(`Unsupported network for derivation: ${net}`);
@@ -75,7 +75,7 @@ export function deriveDepositAddress(
   if (net === "Bitcoin") {
     return bitcoinAddressFromKey(child);
   }
-  if (net === "Solana") {
+  if (net === "Solana" || net === "SPL") {
     return solanaAddressFromKey(child);
   }
   return computeAddress("0x" + privateKeyHex);

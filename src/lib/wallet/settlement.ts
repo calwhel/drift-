@@ -173,16 +173,40 @@ export async function processPendingSettlements(): Promise<number> {
           USDT_ERC20,
           6
         );
+      } else if (
+        settlement.network === "TRC20" &&
+        settlement.currency === "USDT" &&
+        settlement.fromDerivationIndex != null
+      ) {
+        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "TRC20");
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
+      } else if (
+        settlement.network === "SPL" &&
+        settlement.currency === "USDT" &&
+        settlement.fromDerivationIndex != null
+      ) {
+        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "SPL");
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
       } else if (settlement.network === "TRC20") {
         await db
           .update(settlements)
           .set({
-            status: "ledger_settled",
-            completedAt: new Date(),
-            error: "Tron on-chain broadcast pending TronWeb integration",
+            status: "queued",
+            error: "TRC20 fee sweep requires a custodial wallet or derivation index",
           })
           .where(eq(settlements.id, settlement.id));
-        processed++;
         continue;
       } else {
         await db

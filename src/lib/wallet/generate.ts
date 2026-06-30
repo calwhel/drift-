@@ -43,7 +43,7 @@ export function generateWalletForNetwork(currency: string, network: string): Gen
   } else if (network === "Bitcoin") {
     privateKey = ethWallet.privateKey;
     address = bitcoinAddressFromPrivateKey(privateKey.slice(2));
-  } else if (network === "Solana") {
+  } else if (network === "Solana" || network === "SPL") {
     const keypair = Keypair.generate();
     privateKey = Buffer.from(keypair.secretKey).toString("hex");
     address = keypair.publicKey.toBase58();
@@ -67,6 +67,6 @@ export function validateWalletAddress(address: string, network: string): boolean
   if (network === "ERC20") return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
   if (network === "TRC20") return /^T[a-zA-Z0-9]{33}$/.test(trimmed);
   if (network === "Bitcoin") return /^(1|3|bc1)[a-zA-Z0-9]{25,62}$/.test(trimmed);
-  if (network === "Solana") return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
+  if (network === "Solana" || network === "SPL") return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
   return true;
 }

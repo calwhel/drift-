@@ -59,7 +59,7 @@ async function pollEvm(
   const data = await res.json();
   if (data.status !== "1") return [];
 
-  const decimals = getDecimals(currency);
+  const decimals = getDecimals(currency, network);
 
   return (data.result ?? [])
     .filter(
@@ -118,6 +118,82 @@ async function getBitcoinBlockHeight(): Promise<number> {
     btcHeightAt = Date.now();
   }
   return cachedBtcHeight || 800000;
+}
+
+async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
+  const { Connection, PublicKey } = await import("@solana/web3.js");
+  const { getAssociatedTokenAddress, getAccount } = await import("@solana/spl-token");
+
+  const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+  const connection = new Connection(rpc, "confirmed");
+  const owner = new PublicKey(ownerAddress);
+  const mint = new PublicKey(TOKEN_CONTRACTS.SPL.USDT);
+
+  let ata: Awaited<ReturnType<typeof getAssociatedTokenAddress>>;
+  try {
+    ata = await getAssociatedTokenAddress(mint, owner);
+  } catch {
+    return [];
+  }
+
+  const sigs = await connection.getSignaturesForAddress(ata, { limit: 10 });
+  const results: DetectedPayment[] = [];
+
+  for (const sig of sigs.slice(0, 5)) {
+    if (sig.err) continue;
+
+    const tx = await connection.getParsedTransaction(sig.signature, {
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!tx?.meta || tx.meta.err) continue;
+
+    const pre = tx.meta.preTokenBalances ?? [];
+    const post = tx.meta.postTokenBalances ?? [];
+
+    const preBal = pre.find(
+      (b) => b.mint === TOKEN_CONTRACTS.SPL.USDT && b.owner === ownerAddress
+    );
+    const postBal = post.find(
+      (b) => b.mint === TOKEN_CONTRACTS.SPL.USDT && b.owner === ownerAddress
+    );
+
+    const preAmount = preBal?.uiTokenAmount.uiAmount ?? 0;
+    const postAmount = postBal?.uiTokenAmount.uiAmount ?? 0;
+    const delta = postAmount - preAmount;
+
+    if (delta <= 0) continue;
+
+    results.push({
+      txHash: sig.signature,
+      amount: delta,
+      currency: "USDT",
+      network: "SPL",
+      confirmations: sig.confirmationStatus === "finalized" ? 32 : 1,
+      depositAddress: ownerAddress,
+    });
+  }
+
+  // Fallback: compare ATA balance if parsed deltas are unavailable
+  if (results.length === 0 && sigs.length > 0) {
+    try {
+      const account = await getAccount(connection, ata);
+      const balance = Number(account.amount) / 1e6;
+      if (balance > 0) {
+        results.push({
+          txHash: sigs[0].signature,
+          amount: balance,
+          currency: "USDT",
+          network: "SPL",
+          confirmations: sigs[0].confirmationStatus === "finalized" ? 32 : 1,
+          depositAddress: ownerAddress,
+        });
+      }
+    } catch {
+      // ATA not created yet
+    }
+  }
+
+  return results;
 }
 
 async function pollSolana(address: string): Promise<DetectedPayment[]> {
@@ -221,6 +297,8 @@ export async function pollAllNetworks() {
         );
       } else if (network === "Bitcoin") {
         detected.push(...(await pollBitcoin(address)));
+      } else if (network === "SPL" && currency === "USDT") {
+        detected.push(...(await pollSolanaSpl(address)));
       } else if (network === "Solana") {
         detected.push(...(await pollSolana(address)));
       }
@@ -246,7 +324,7 @@ async function updateConfirmingTransactions() {
 
   for (const tx of confirming) {
     if (!tx.txHash) continue;
-    const required = getRequiredConfirmations(tx.currency);
+    const required = getRequiredConfirmations(tx.currency, tx.network);
     const current = Number(tx.confirmations ?? 0);
     if (current >= required) {
       await completeTransaction(tx.id);
@@ -273,7 +351,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
         })
         .where(eq(transactions.id, existing.id));
 
-      if (payment.confirmations >= getRequiredConfirmations(existing.currency)) {
+      if (payment.confirmations >= getRequiredConfirmations(existing.currency, existing.network)) {
         await completeTransaction(existing.id);
       }
     }
@@ -327,7 +405,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
 
   if (
     (status === "confirming" || status === "overpaid") &&
-    payment.confirmations >= getRequiredConfirmations(link.currency)
+    payment.confirmations >= getRequiredConfirmations(link.currency, link.network)
   ) {
     await completeTransaction(tx.id);
   }

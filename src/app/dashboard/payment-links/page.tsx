@@ -8,6 +8,7 @@ import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
+import { USDT_NETWORKS, getNetworkLabel, type UsdtNetwork } from "@/lib/constants";
 
 const CURRENCIES = ["USDT", "BTC", "USDC", "ETH", "SOL"];
 const EXPIRY_OPTIONS: Record<string, number | null> = {
@@ -24,6 +25,7 @@ interface PaymentLinkRow {
   shortCode: string;
   amount: string;
   currency: string;
+  network: string;
   status: string;
 }
 
@@ -41,6 +43,7 @@ export default function PaymentLinksPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
+  const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("TRC20");
   const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
   const [expiryOn, setExpiryOn] = useState(false);
@@ -69,10 +72,12 @@ export default function PaymentLinksPage() {
       .catch(() => {});
   }, []);
 
-  const walletsForCurrency = useMemo(
-    () => wallets.filter((w) => w.currency === currency),
-    [wallets, currency]
-  );
+  const walletsForCurrency = useMemo(() => {
+    if (currency === "USDT") {
+      return wallets.filter((w) => w.currency === "USDT" && w.network === usdtNetwork);
+    }
+    return wallets.filter((w) => w.currency === currency);
+  }, [wallets, currency, usdtNetwork]);
 
   useEffect(() => {
     if (walletsForCurrency.length > 0 && !walletsForCurrency.find((w) => w.id === walletId)) {
@@ -100,7 +105,8 @@ export default function PaymentLinksPage() {
 
   const handleCreate = async () => {
     if (!walletId) {
-      setError(`Create a ${currency} wallet in Wallets first`);
+      const networkHint = currency === "USDT" ? ` on ${getNetworkLabel("USDT", usdtNetwork)}` : "";
+      setError(`Create a ${currency} wallet${networkHint} in Wallets first`);
       return;
     }
     setLoading(true);
@@ -121,6 +127,7 @@ export default function PaymentLinksPage() {
         description: description || undefined,
         amount: Number(amount),
         currency,
+        network: currency === "USDT" ? usdtNetwork : selectedWallet?.network,
         wallet_id: walletId,
         redirect_url: redirectUrl || undefined,
         expiry: expiryIso,
@@ -216,6 +223,7 @@ export default function PaymentLinksPage() {
                             onClick={() => {
                               setCurrency(c);
                               setCurrencyOpen(false);
+                              if (c === "USDT") setUsdtNetwork("TRC20");
                             }}
                             className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-white hover:bg-white/5"
                           >
@@ -229,11 +237,35 @@ export default function PaymentLinksPage() {
                 </div>
               </div>
 
+              {currency === "USDT" && (
+                <div>
+                  <label className="mb-1.5 block text-[13px] font-medium text-white">USDT Network</label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {USDT_NETWORKS.map((n) => (
+                      <button
+                        key={n.network}
+                        type="button"
+                        onClick={() => setUsdtNetwork(n.network)}
+                        className={cn(
+                          "rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors",
+                          usdtNetwork === n.network
+                            ? "border-[#7c3aed] bg-[#7c3aed18] text-white"
+                            : "border-drift-border bg-drift-bg text-drift-muted hover:border-[#3f3f50]"
+                        )}
+                      >
+                        {n.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="mb-1.5 block text-[13px] font-medium text-white">Receive to wallet</label>
                 {walletsForCurrency.length === 0 ? (
                   <p className="text-sm text-red-400">
-                    No {currency} wallet yet.{" "}
+                    No {currency}
+                    {currency === "USDT" ? ` (${getNetworkLabel("USDT", usdtNetwork)})` : ""} wallet yet.{" "}
                     <Link href="/dashboard/wallets" className="text-brand-400 hover:underline">
                       Add one in Wallets
                     </Link>
@@ -246,7 +278,8 @@ export default function PaymentLinksPage() {
                   >
                     {walletsForCurrency.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.label ?? w.currency} — {w.walletType === "generated" ? "Drift custodial" : "Connected"} (
+                        {w.label ?? getNetworkLabel(w.currency, w.network)} —{" "}
+                        {w.walletType === "generated" ? "Drift custodial" : "Connected"} (
                         {w.address.slice(0, 8)}…)
                       </option>
                     ))}
@@ -340,6 +373,11 @@ export default function PaymentLinksPage() {
               )}
               <p className="mt-5 text-2xl font-bold tabular-nums text-white">
                 {amount || createdLink?.amount || "0.00"} {currency}
+                {currency === "USDT" && (
+                  <span className="ml-2 text-base font-medium text-drift-muted">
+                    {getNetworkLabel("USDT", usdtNetwork)}
+                  </span>
+                )}
               </p>
               <div className="mx-auto mt-5 flex w-[200px] items-center justify-center rounded-2xl bg-white p-4">
                 <QRCodeSVG
@@ -377,6 +415,7 @@ export default function PaymentLinksPage() {
                 <tr className="border-b border-drift-border text-[12px] text-drift-muted">
                   <th className="px-5 py-3 font-medium">Title</th>
                   <th className="px-5 py-3 font-medium">Amount</th>
+                  <th className="px-5 py-3 font-medium">Network</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Link</th>
                   <th className="px-5 py-3 text-right font-medium">Actions</th>
@@ -388,6 +427,9 @@ export default function PaymentLinksPage() {
                     <td className="px-5 py-4 text-white">{link.title}</td>
                     <td className="px-5 py-4 tabular-nums text-white">
                       {link.amount} {link.currency}
+                    </td>
+                    <td className="px-5 py-4 text-drift-muted">
+                      {getNetworkLabel(link.currency, link.network)}
                     </td>
                     <td className="px-5 py-4">
                       <StatusBadge
@@ -419,7 +461,7 @@ export default function PaymentLinksPage() {
                 ))}
                 {links.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 text-center text-drift-muted">
+                    <td colSpan={6} className="px-5 py-10 text-center text-drift-muted">
                       No payment links yet. Create your first link above.
                     </td>
                   </tr>
