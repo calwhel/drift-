@@ -7,7 +7,8 @@ import { LogoMark } from "@/components/landing/logo-mark";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
-import { checkoutFeatures, demoCheckout, paymentMethods } from "@/lib/mock-data";
+import { getNetworkLabel } from "@/lib/constants";
+import { checkoutFeatures, demoCheckout } from "@/lib/mock-data";
 
 interface PaymentLinkData {
   title: string;
@@ -35,7 +36,6 @@ export default function CheckoutPage() {
   const [paymentStatus, setPaymentStatus] = useState("pending");
   const [timeLeft, setTimeLeft] = useState(899);
   const [copied, setCopied] = useState<string | null>(null);
-  const [selected, setSelected] = useState("USDT");
 
   useEffect(() => {
     fetch(`/api/payment-links/public/${shortcode}`)
@@ -45,7 +45,6 @@ export default function CheckoutPage() {
       })
       .then((data: PaymentLinkData) => {
         setLink(data);
-        setSelected(data.currency);
         if (data.expiry) {
           const remaining = Math.max(0, Math.floor((new Date(data.expiry).getTime() - Date.now()) / 1000));
           setTimeLeft(remaining);
@@ -64,7 +63,6 @@ export default function CheckoutPage() {
           expiry: null,
           status: "active",
         });
-        setSelected(demoCheckout.currency);
       });
   }, [shortcode]);
 
@@ -109,8 +107,7 @@ export default function CheckoutPage() {
   }
 
   const activeStepIndex = STEPS.findIndex((s) => s.key === paymentStatus);
-  const methods = paymentMethods;
-  const selectedMethod = methods.find((m) => m.label === selected) ?? methods[0];
+  const networkLabel = getNetworkLabel(link.currency, link.network);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#08080d] py-8 text-white">
@@ -162,6 +159,7 @@ export default function CheckoutPage() {
               <p className="mt-1 text-2xl font-bold tabular-nums text-white">
                 {link.amount} <span className="text-base font-semibold text-drift-muted">{link.currency}</span>
               </p>
+              <p className="mt-0.5 text-[12px] text-drift-muted">{networkLabel}</p>
               <p className="text-[12px] text-drift-muted">≈ ${demoCheckout.usdApprox} USD</p>
             </div>
           </div>
@@ -181,35 +179,19 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            <p className="mt-6 text-[15px] font-semibold text-white">Choose Payment Method</p>
-            <div className="mt-3 grid grid-cols-3 gap-2.5 sm:grid-cols-5">
-              {methods.map((m) => (
-                <button
-                  key={m.label}
-                  onClick={() => setSelected(m.label)}
-                  className={cn(
-                    "flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-colors",
-                    selected === m.label
-                      ? "border-[#7c3aed] bg-[#7c3aed14]"
-                      : "border-drift-border bg-drift-card hover:bg-white/5"
-                  )}
-                >
-                  <CryptoIcon symbol={m.label} size="sm" />
-                  <span className="text-[12px] font-medium text-white">{m.label}</span>
-                  <span className="text-[10px] text-drift-muted">{m.network}</span>
-                </button>
-              ))}
-              <button className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-drift-border bg-drift-card p-3 hover:bg-white/5">
-                <span className="flex h-6 w-6 items-center justify-center text-drift-muted">
-                  <Icon name="MoreHorizontal" className="h-5 w-5" />
-                </span>
-                <span className="text-[12px] font-medium text-white">More</span>
-              </button>
+            <div className="mt-6 flex items-center gap-3 rounded-xl border border-[#7c3aed40] bg-[#7c3aed14] px-4 py-3">
+              <CryptoIcon symbol={link.currency} size="sm" />
+              <div>
+                <p className="text-[14px] font-semibold text-white">
+                  Pay with {link.currency}
+                </p>
+                <p className="text-[12px] text-[#c4b5fd]">{networkLabel}</p>
+              </div>
             </div>
 
             <div className="mt-5 rounded-2xl border border-drift-border bg-drift-bg p-5">
               <p className="text-[14px] font-semibold text-white">
-                Pay with {selectedMethod.label} ({selectedMethod.network})
+                Send {link.currency} on {networkLabel}
               </p>
               <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-[160px_1fr]">
                 <div>
@@ -242,8 +224,8 @@ export default function CheckoutPage() {
                   <div className="flex items-start gap-2 rounded-lg border border-[#7c3aed40] bg-[#7c3aed14] px-3 py-2.5">
                     <Icon name="Info" className="mt-0.5 h-4 w-4 shrink-0 text-[#a78bfa]" />
                     <p className="text-[11px] leading-relaxed text-[#c4b5fd]">
-                      Send only {selectedMethod.label} ({selectedMethod.network}) to this address. Sending any other coin may
-                      result in permanent loss.
+                      Send only {link.currency} ({networkLabel}) to this address. Sending any other coin or using the wrong
+                      network may result in permanent loss.
                     </p>
                   </div>
                 </div>

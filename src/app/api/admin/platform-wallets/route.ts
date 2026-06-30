@@ -3,6 +3,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { z } from "zod";
 import { db, platformWallets } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { validateWalletAddress } from "@/lib/wallet/generate";
 import { PLATFORM_WALLET_NETWORKS } from "@/lib/constants";
 
 const walletSchema = z.object({
@@ -51,6 +52,21 @@ export async function POST(req: NextRequest) {
 
   const { currency, network, address, label, isActive } = parsed.data;
 
+  const supported = PLATFORM_WALLET_NETWORKS.some(
+    (n) => n.currency === currency && n.network === network
+  );
+  if (!supported) {
+    return NextResponse.json({ error: "Unsupported currency/network" }, { status: 400 });
+  }
+
+  const trimmedAddress = address.trim();
+  if (!validateWalletAddress(trimmedAddress, network)) {
+    return NextResponse.json(
+      { error: `Invalid address format for ${currency} (${network})` },
+      { status: 400 }
+    );
+  }
+
   const [existing] = await db
     .select()
     .from(platformWallets)
@@ -61,7 +77,7 @@ export async function POST(req: NextRequest) {
     const [updated] = await db
       .update(platformWallets)
       .set({
-        address,
+        address: trimmedAddress,
         label: label ?? existing.label,
         isActive: isActive ?? true,
         updatedAt: new Date(),
@@ -77,7 +93,7 @@ export async function POST(req: NextRequest) {
     .values({
       currency,
       network,
-      address,
+      address: trimmedAddress,
       label,
       isActive: isActive ?? true,
     })

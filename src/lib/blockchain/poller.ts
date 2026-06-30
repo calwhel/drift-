@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
@@ -122,7 +122,7 @@ async function getBitcoinBlockHeight(): Promise<number> {
 
 async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
   const { Connection, PublicKey } = await import("@solana/web3.js");
-  const { getAssociatedTokenAddress, getAccount } = await import("@solana/spl-token");
+  const { getAssociatedTokenAddress } = await import("@solana/spl-token");
 
   const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
@@ -171,26 +171,6 @@ async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
       confirmations: sig.confirmationStatus === "finalized" ? 32 : 1,
       depositAddress: ownerAddress,
     });
-  }
-
-  // Fallback: compare ATA balance if parsed deltas are unavailable
-  if (results.length === 0 && sigs.length > 0) {
-    try {
-      const account = await getAccount(connection, ata);
-      const balance = Number(account.amount) / 1e6;
-      if (balance > 0) {
-        results.push({
-          txHash: sigs[0].signature,
-          amount: balance,
-          currency: "USDT",
-          network: "SPL",
-          confirmations: sigs[0].confirmationStatus === "finalized" ? 32 : 1,
-          depositAddress: ownerAddress,
-        });
-      }
-    } catch {
-      // ATA not created yet
-    }
   }
 
   return results;
@@ -261,19 +241,12 @@ export async function pollAllNetworks() {
   const now = new Date();
   const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
 
-  const addresses = new Map<string, { currency: string; network: string }>();
-  for (const link of validLinks) {
-    addresses.set(link.depositAddress, {
-      currency: link.currency,
-      network: link.network,
-    });
-  }
-
   const detected: DetectedPayment[] = [];
 
-  for (const [address, { currency, network }] of Array.from(addresses.entries())) {
+  for (const link of validLinks) {
+    const { depositAddress: address, currency, network } = link;
     try {
-      if (network === "TRC20") {
+      if (network === "TRC20" && currency === "USDT") {
         detected.push(...(await pollTron(address)));
       } else if (network === "ERC20" && process.env.ETHERSCAN_API_KEY) {
         detected.push(
@@ -303,7 +276,7 @@ export async function pollAllNetworks() {
         detected.push(...(await pollSolana(address)));
       }
     } catch (err) {
-      console.error(`Poll error ${network}:`, err);
+      console.error(`Poll error ${network}/${currency} for ${address}:`, err);
     }
   }
 
@@ -364,9 +337,12 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .where(
       and(
         eq(paymentLinks.depositAddress, payment.depositAddress),
+        eq(paymentLinks.currency, payment.currency),
+        eq(paymentLinks.network, payment.network),
         eq(paymentLinks.status, "active")
       )
     )
+    .orderBy(desc(paymentLinks.createdAt))
     .limit(1);
 
   if (!link) return;
@@ -448,7 +424,13 @@ async function completeTransaction(transactionId: string) {
     const [w] = await db
       .select()
       .from(wallets)
-      .where(and(eq(wallets.userId, tx.userId), eq(wallets.currency, tx.currency)))
+      .where(
+        and(
+          eq(wallets.userId, tx.userId),
+          eq(wallets.currency, tx.currency),
+          eq(wallets.network, tx.network)
+        )
+      )
       .limit(1);
     wallet = w ?? null;
   }

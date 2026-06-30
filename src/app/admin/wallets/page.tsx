@@ -69,7 +69,7 @@ export default function AdminWalletsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save wallet");
       setSuccess(`Saved ${form.currency} (${form.network}) fee wallet`);
-      setForm((f) => ({ ...f, address: "" }));
+      selectNetwork(form.currency, form.network);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");

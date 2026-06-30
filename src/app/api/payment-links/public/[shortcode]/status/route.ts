@@ -38,6 +38,7 @@ export async function GET(
     link_status: link.status,
     amount: link.amount,
     currency: link.currency,
+    network: link.network,
     redirect_url: link.redirectUrl,
     paid_at: link.paidAt,
     transaction_id: tx?.id ?? null,
