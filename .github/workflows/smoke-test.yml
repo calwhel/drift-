@@ -1,0 +1,26 @@
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run smoke test against production
+        env:
+          SMOKE_TEST_URL: ${{ vars.SMOKE_TEST_URL }}
+          SMOKE_WAIT_MS: "360000"
+          SMOKE_RETRY_MS: "15000"
+        run: node scripts/smoke-test.cjs
