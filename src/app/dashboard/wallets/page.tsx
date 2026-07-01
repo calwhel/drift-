@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
-import { WalletBalanceChart } from "@/components/dashboard/wallet-balance-chart";
+import { WalletBalanceChart, type BalanceChartPoint } from "@/components/dashboard/wallet-balance-chart";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon, type IconName } from "@/components/icons";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,7 @@ export default function WalletsPage() {
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [chartData, setChartData] = useState<BalanceChartPoint[]>([]);
 
   const loadActivity = useCallback(() => {
     Promise.all([
@@ -110,6 +111,13 @@ export default function WalletsPage() {
       .catch(() => setActivity([]));
   }, []);
 
+  const loadChart = useCallback((selectedRange: string) => {
+    fetch(`/api/dashboard/balance-history?range=${selectedRange}`)
+      .then((r) => (r.ok ? r.json() : { chart: [] }))
+      .then((d) => setChartData(d.chart ?? []))
+      .catch(() => setChartData([]));
+  }, []);
+
   const load = useCallback(() => {
     fetch("/api/wallets")
       .then((r) => (r.ok ? r.json() : { wallets: [], totalBalance: 0 }))
@@ -124,6 +132,10 @@ export default function WalletsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadChart(range);
+  }, [range, loadChart]);
 
   const walletForNetwork = (currency: string, network: string) =>
     wallets.find((w) => w.currency === currency && w.network === network);
@@ -275,7 +287,7 @@ export default function WalletsPage() {
                 </span>
               </div>
               <div className="mt-3">
-                <WalletBalanceChart />
+                <WalletBalanceChart data={chartData} />
               </div>
             </div>
 

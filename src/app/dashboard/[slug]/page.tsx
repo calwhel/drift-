@@ -1,16 +1,7 @@
 import { notFound } from "next/navigation";
 import { PlaceholderPage } from "@/components/dashboard/placeholder-page";
 
-const PLACEHOLDER_PAGES: Record<string, { title: string; subtitle: string }> = {
-  customers: {
-    title: "Customers",
-    subtitle: "Manage your customer base and payment history.",
-  },
-  analytics: {
-    title: "Analytics",
-    subtitle: "Deep insights into your payment performance.",
-  },
-};
+const PLACEHOLDER_PAGES: Record<string, { title: string; subtitle: string }> = {};
 
 export function generateStaticParams() {
   return Object.keys(PLACEHOLDER_PAGES).map((slug) => ({ slug }));

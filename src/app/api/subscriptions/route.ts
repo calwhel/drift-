@@ -5,8 +5,8 @@ import { nanoid } from "nanoid";
 import { db, subscriptions, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { deriveDepositAddress, getNextDerivationIndex } from "@/lib/wallet/derive";
-import { getDefaultWalletForCurrency } from "@/lib/wallet/helpers";
-import { NETWORKS, SupportedCurrency } from "@/lib/constants";
+import { getWalletForCurrencyAndNetwork } from "@/lib/wallet/helpers";
+import { defaultNetworkForCurrency } from "@/lib/constants";
 
 const createSchema = z.object({
   customer_email: z.string().email(),
@@ -14,6 +14,7 @@ const createSchema = z.object({
   plan_name: z.string().min(1),
   amount: z.number().positive(),
   currency: z.string().default("USDT"),
+  network: z.string().optional(),
   interval: z.enum(["week", "month", "year"]).default("month"),
 });
 
@@ -38,13 +39,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const data = createSchema.parse(body);
     const currency = data.currency.toUpperCase();
-    const network = NETWORKS[currency as SupportedCurrency]?.network ?? "TRC20";
+    const network = data.network ?? defaultNetworkForCurrency(currency);
 
     const derivationIndex = await getNextDerivationIndex();
     let depositAddress: string;
     let walletId: string | null = null;
 
-    const userWallet = await getDefaultWalletForCurrency(auth.userId, currency);
+    const userWallet = await getWalletForCurrencyAndNetwork(auth.userId, currency, network);
     if (userWallet) {
       depositAddress = userWallet.address;
       walletId = userWallet.id;

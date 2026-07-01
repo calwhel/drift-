@@ -2,6 +2,7 @@ import { pollAllNetworks } from "@/lib/blockchain/poller";
 import { processPendingWebhooks } from "@/lib/webhooks";
 import { processPendingSettlements } from "@/lib/wallet/settlement";
 import { processPendingWithdrawals } from "@/lib/wallet/withdraw";
+import { processSubscriptionRenewals } from "@/lib/subscription-renewals";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -16,6 +17,7 @@ export interface PaymentPollResult {
   detected: number;
   settlements: number;
   withdrawals: number;
+  subscriptionRenewals: number;
   timestamp: string;
   error?: string;
 }
@@ -29,6 +31,7 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
       detected: 0,
       settlements: 0,
       withdrawals: 0,
+      subscriptionRenewals: 0,
       timestamp,
       error: "Poll cycle already in progress",
     };
@@ -39,6 +42,7 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
     const detected = await pollAllNetworks();
     const settlements = await processPendingSettlements();
     const withdrawalsProcessed = await processPendingWithdrawals();
+    const subscriptionRenewals = await processSubscriptionRenewals();
     await processPendingWebhooks();
 
     return {
@@ -46,6 +50,7 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
       detected,
       settlements,
       withdrawals: withdrawalsProcessed,
+      subscriptionRenewals,
       timestamp,
     };
   } catch (err) {
@@ -55,6 +60,7 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
       detected: 0,
       settlements: 0,
       withdrawals: 0,
+      subscriptionRenewals: 0,
       timestamp,
       error: err instanceof Error ? err.message : "Poll failed",
     };
@@ -80,7 +86,7 @@ export function startPaymentPoller(): void {
   void runPaymentPollCycle().then((result) => {
     if (result.ok) {
       console.log(
-        `[payment-poller] Initial cycle complete — detected=${result.detected} settlements=${result.settlements} withdrawals=${result.withdrawals}`
+        `[payment-poller] Initial cycle complete — detected=${result.detected} settlements=${result.settlements} withdrawals=${result.withdrawals} renewals=${result.subscriptionRenewals}`
       );
     } else if (result.error) {
       console.warn(`[payment-poller] Initial cycle: ${result.error}`);

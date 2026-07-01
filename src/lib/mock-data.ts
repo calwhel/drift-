@@ -45,6 +45,8 @@ export const navItems = [
   { label: "Transactions", href: "/dashboard/transactions", icon: "ArrowRightLeft" },
   { label: "Payment Links", href: "/dashboard/payment-links", icon: "Link" },
   { label: "Wallets", href: "/dashboard/wallets", icon: "Wallet" },
+  { label: "Customers", href: "/dashboard/customers", icon: "Users" },
+  { label: "Analytics", href: "/dashboard/analytics", icon: "BarChart3" },
   { label: "API Keys", href: "/dashboard/api-keys", icon: "Key" },
   { label: "Invoices", href: "/dashboard/invoices", icon: "FileText" },
   { label: "Payouts", href: "/dashboard/payouts", icon: "CreditCard" },

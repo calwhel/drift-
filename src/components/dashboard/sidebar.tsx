@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -16,7 +15,6 @@ interface SidebarProps {
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const [darkMode, setDarkMode] = useState(true);
   const { data: session } = useSession();
   const displayName = session?.user?.name ?? session?.user?.email ?? "Account";
   const initials = getUserInitials(session?.user?.name ?? session?.user?.email);
@@ -69,30 +67,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        <div className="space-y-3 px-3 pb-3">
-          <button
-            onClick={() => setDarkMode((v) => !v)}
-            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-[13px] text-drift-muted hover:bg-white/5"
-          >
-            <span className="flex items-center gap-2">
-              <Icon name="Moon" className="h-4 w-4" />
-              Dark Mode
-            </span>
-            <span
-              className={cn(
-                "relative h-5 w-9 rounded-full transition-colors",
-                darkMode ? "bg-[#7c3aed]" : "bg-[#2a2a38]"
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-                  darkMode ? "translate-x-[18px]" : "translate-x-0.5"
-                )}
-              />
-            </span>
-          </button>
-
+        <div className="px-3 pb-3">
           <div className="flex items-center gap-2.5 rounded-lg border border-drift-border bg-drift-card px-3 py-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] text-[11px] font-semibold text-white">
               {initials}

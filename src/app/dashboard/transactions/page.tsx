@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
 import { Search, Download } from "lucide-react";
 import type { Transaction, TransactionStatus } from "@/lib/mock-data";
+import { downloadCsv } from "@/lib/export-csv";
 
 const PER_PAGE = 10;
 const STATUSES = ["all", "completed", "pending", "failed", "confirming"];
@@ -33,8 +34,23 @@ function mapTx(row: Record<string, string>): Transaction {
 }
 
 export default function TransactionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+        </div>
+      }
+    >
+      <TransactionsPageContent />
+    </Suspense>
+  );
+}
+
+function TransactionsPageContent() {
   const { status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -42,6 +58,12 @@ export default function TransactionsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    const q = searchParams.get("search");
+    if (q) setSearch(q);
+  }, [searchParams]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -83,6 +105,37 @@ export default function TransactionsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ page: "1", limit: "5000" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (debouncedSearch) params.set("search", debouncedSearch);
+
+      const res = await fetch(`/api/transactions?${params}`);
+      const data = await res.json();
+      const rows = data.data ?? [];
+
+      downloadCsv(`drift-transactions-${new Date().toISOString().slice(0, 10)}.csv`, [
+        ["ID", "Customer", "Amount", "Currency", "Network", "Status", "Fee", "Net", "Date", "Tx Hash"],
+        ...rows.map((row: Record<string, string>) => [
+          row.id,
+          row.customerEmail ?? "",
+          row.amount,
+          row.currency,
+          row.network,
+          row.status,
+          row.feeAmount ?? "",
+          row.netAmount ?? "",
+          new Date(row.createdAt).toISOString(),
+          row.txHash ?? "",
+        ]),
+      ]);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (status === "loading" || (loading && transactions.length === 0)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -119,9 +172,13 @@ export default function TransactionsPage() {
                 </option>
               ))}
             </select>
-            <button className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 transition hover:bg-white/10">
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-gray-300 transition hover:bg-white/10 disabled:opacity-50"
+            >
               <Download className="h-4 w-4" />
-              Export
+              {exporting ? "Exporting…" : "Export"}
             </button>
           </div>
         </div>

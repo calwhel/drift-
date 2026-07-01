@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "../icons";
 import { useAdminSidebar } from "../admin/sidebar-context";
 import { useSidebarOptional } from "./sidebar-context";
@@ -16,9 +19,11 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ title, subtitle, emoji, onMenuClick, actions, children }: DashboardHeaderProps) {
+  const router = useRouter();
   const dashboardSidebar = useSidebarOptional();
   const adminSidebar = useAdminSidebar();
   const { data: session } = useSession();
+  const [searchQuery, setSearchQuery] = useState("");
   const displayName = session?.user?.name ?? session?.user?.email ?? "Account";
   const initials = getUserInitials(session?.user?.name ?? session?.user?.email);
 
@@ -31,6 +36,12 @@ export function DashboardHeader({ title, subtitle, emoji, onMenuClick, actions, 
         adminSidebar.setOpen(true);
       }
     });
+
+  const submitSearch = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    router.push(`/dashboard/transactions?search=${encodeURIComponent(q)}`);
+  };
 
   return (
     <header className="border-b border-drift-border bg-drift-bg">
@@ -59,22 +70,30 @@ export function DashboardHeader({ title, subtitle, emoji, onMenuClick, actions, 
               <Icon name="Search" className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-drift-muted" />
               <input
                 type="text"
-                placeholder="Search anything..."
-                className="w-full rounded-lg border border-drift-border bg-drift-card py-2.5 pl-10 pr-14 text-[13px] text-white placeholder:text-drift-muted focus:border-[#3f3f50] focus:outline-none"
+                placeholder="Search transactions…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitSearch();
+                }}
+                className="w-full rounded-lg border border-drift-border bg-drift-card py-2.5 pl-10 pr-4 text-[13px] text-white placeholder:text-drift-muted focus:border-[#3f3f50] focus:outline-none"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded border border-drift-border px-1.5 py-0.5 text-[10px] text-drift-muted">
-                ⌘K
-              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
             {actions}
-            <button className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-drift-border bg-drift-card text-drift-muted hover:text-white">
+            <Link
+              href="/dashboard/transactions"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-drift-border bg-drift-card text-drift-muted hover:text-white"
+              aria-label="Transactions"
+            >
               <Icon name="Bell" className="h-[18px] w-[18px]" />
-              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-drift-red" />
-            </button>
-            <button className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card py-1 pl-1 pr-2.5">
+            </Link>
+            <Link
+              href="/dashboard/settings"
+              className="flex items-center gap-2 rounded-lg border border-drift-border bg-drift-card py-1 pl-1 pr-2.5"
+            >
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] text-[11px] font-semibold text-white">
                 {initials}
               </span>
@@ -85,7 +104,7 @@ export function DashboardHeader({ title, subtitle, emoji, onMenuClick, actions, 
                 <span className="block text-[10px] leading-tight text-drift-muted">Business Account</span>
               </span>
               <Icon name="ChevronDown" className="hidden h-3.5 w-3.5 text-drift-muted sm:block" />
-            </button>
+            </Link>
           </div>
         </div>
         {children}
