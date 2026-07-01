@@ -35,6 +35,13 @@ export default function AdminOverviewPage() {
   const { setOpen } = useAdminSidebar();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState<{
+    config?: { bot_token: string; admin_chat_id: string; configured: boolean };
+    bot?: { ok: boolean; username?: string; error?: string };
+    note?: string;
+  } | null>(null);
+  const [telegramTestMsg, setTelegramTestMsg] = useState("");
+  const [telegramTesting, setTelegramTesting] = useState(false);
 
   useEffect(() => {
     fetch("/api/admin/stats")
@@ -47,7 +54,29 @@ export default function AdminOverviewPage() {
       })
       .then(setStats)
       .catch((err) => setError(err.message));
+
+    fetch("/api/admin/telegram/test")
+      .then((r) => r.json())
+      .then(setTelegramStatus)
+      .catch(() => {});
   }, []);
+
+  const sendTelegramTest = async () => {
+    setTelegramTesting(true);
+    setTelegramTestMsg("");
+    try {
+      const res = await fetch("/api/admin/telegram/test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? data.hint ?? "Test failed");
+      setTelegramTestMsg(data.message ?? "Test sent!");
+      const statusRes = await fetch("/api/admin/telegram/test");
+      setTelegramStatus(await statusRes.json());
+    } catch (err) {
+      setTelegramTestMsg(err instanceof Error ? err.message : "Test failed");
+    } finally {
+      setTelegramTesting(false);
+    }
+  };
 
   const cards = [
     { label: "Total Users", value: stats?.totalUsers ?? 0 },
@@ -80,6 +109,67 @@ export default function AdminOverviewPage() {
             </div>
           ))}
         </div>
+
+        <section className="card mt-4 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="section-title">Telegram admin alerts</h2>
+              <p className="mt-1 text-2xs text-drift-muted">
+                One-way notifications only — the bot will not reply if you message it. Alerts fire on
+                payments, signups, support, and withdrawals.
+              </p>
+              <ul className="mt-2 space-y-1 text-2xs text-drift-muted">
+                <li>
+                  Bot token:{" "}
+                  <span className={telegramStatus?.config?.bot_token === "set" ? "text-drift-green" : "text-drift-red"}>
+                    {telegramStatus?.config?.bot_token ?? "unknown"}
+                  </span>
+                </li>
+                <li>
+                  Chat ID:{" "}
+                  <span
+                    className={
+                      telegramStatus?.config?.admin_chat_id === "set" ? "text-drift-green" : "text-drift-red"
+                    }
+                  >
+                    {telegramStatus?.config?.admin_chat_id ?? "unknown"}
+                  </span>
+                </li>
+                {telegramStatus?.bot?.ok && (
+                  <li>
+                    Connected as @{telegramStatus.bot.username}
+                  </li>
+                )}
+                {telegramStatus?.bot && !telegramStatus.bot.ok && telegramStatus.config?.configured && (
+                  <li className="text-drift-red">{telegramStatus.bot.error}</li>
+                )}
+              </ul>
+              {!telegramStatus?.config?.configured && (
+                <p className="mt-2 text-2xs text-amber-400">
+                  Add TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID in Railway → your service → Variables,
+                  then redeploy.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={sendTelegramTest}
+              disabled={telegramTesting}
+              className="btn-primary shrink-0 px-4 py-2"
+            >
+              {telegramTesting ? "Sending…" : "Send test alert"}
+            </button>
+          </div>
+          {telegramTestMsg && (
+            <p
+              className={`mt-3 text-sm ${
+                telegramTestMsg.includes("check your Telegram") ? "text-drift-green" : "text-drift-red"
+              }`}
+            >
+              {telegramTestMsg}
+            </p>
+          )}
+        </section>
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <section className="card p-4">

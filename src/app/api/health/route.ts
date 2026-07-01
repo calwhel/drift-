@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { getTelegramConfigStatus } from "@/lib/telegram";
 
 async function tableExists(name: string): Promise<boolean> {
   try {
@@ -12,10 +13,13 @@ async function tableExists(name: string): Promise<boolean> {
 }
 
 export async function GET() {
+  const telegram = getTelegramConfigStatus();
   const checks: Record<string, string> = {
     database_url: process.env.DATABASE_URL ? "set" : "missing",
     nextauth_secret: process.env.NEXTAUTH_SECRET ? "set" : "missing",
     nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
+    telegram_bot_token: telegram.bot_token,
+    telegram_admin_chat_id: telegram.admin_chat_id,
   };
 
   const body: Record<string, unknown> = {

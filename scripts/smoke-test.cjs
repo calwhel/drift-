@@ -90,6 +90,11 @@ async function runChecks() {
 
   if (health?.checks) {
     for (const [key, val] of Object.entries(health.checks)) {
+      if (key.startsWith("telegram_")) {
+        if (val === "set") pass(`Env ${key}`, "set");
+        else warn(`Env ${key}`, "missing — Telegram alerts disabled");
+        continue;
+      }
       if (val === "set") pass(`Env ${key}`, "set");
       else fail(`Env ${key}`, "missing on server");
     }
