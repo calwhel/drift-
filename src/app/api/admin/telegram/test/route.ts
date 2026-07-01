@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import {
   getTelegramConfigStatus,
+  getTelegramWebhookInfo,
+  getTelegramWebhookUrl,
+  registerTelegramWebhook,
   sendTelegramTestNotification,
   verifyTelegramBot,
 } from "@/lib/telegram";
@@ -16,11 +19,23 @@ export async function GET() {
 
   const config = getTelegramConfigStatus();
   const bot = config.configured ? await verifyTelegramBot() : { ok: false as const, error: "Not configured" };
+  const webhook = config.configured ? await getTelegramWebhookInfo() : { ok: false as const, error: "Not configured" };
+  const expectedWebhookUrl = getTelegramWebhookUrl();
 
   return NextResponse.json({
     config,
     bot: bot.ok ? { ok: true, username: bot.username } : { ok: false, error: bot.error },
-    note: "This bot sends admin alerts only — it does not reply when you message it in Telegram.",
+    webhook: webhook.ok
+      ? {
+          ok: true,
+          url: webhook.url,
+          expected_url: expectedWebhookUrl,
+          registered: Boolean(expectedWebhookUrl && webhook.url === expectedWebhookUrl),
+          pending_update_count: webhook.pending_update_count,
+          last_error_message: webhook.last_error_message,
+        }
+      : { ok: false, error: webhook.error },
+    note: "Send /start to your bot in Telegram to open the admin menu.",
   });
 }
 
@@ -45,6 +60,19 @@ export async function POST() {
     );
   }
 
+  const register = await registerTelegramWebhook();
+  if (!register.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: register.error ?? "Failed to register webhook",
+        config,
+        hint: "Ensure NEXTAUTH_URL is set to your public Railway URL (https://…).",
+      },
+      { status: 502 }
+    );
+  }
+
   const result = await sendTelegramTestNotification();
   if (!result.ok) {
     return NextResponse.json(
@@ -52,8 +80,7 @@ export async function POST() {
         ok: false,
         error: result.error,
         config,
-        hint:
-          "Make sure you tapped Start on your bot in Telegram first. Chat ID should be 5603353066. Regenerate the token in @BotFather if it was exposed.",
+        hint: "Make sure you tapped Start on your bot in Telegram first. Regenerate the token in @BotFather if it was exposed.",
       },
       { status: 502 }
     );
@@ -61,7 +88,8 @@ export async function POST() {
 
   return NextResponse.json({
     ok: true,
-    message: "Test notification sent — check your Telegram app.",
+    message: "Webhook registered and test notification sent — check Telegram and try /start.",
     config,
+    webhook_url: register.url,
   });
 }

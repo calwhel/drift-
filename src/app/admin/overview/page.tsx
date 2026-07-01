@@ -38,6 +38,14 @@ export default function AdminOverviewPage() {
   const [telegramStatus, setTelegramStatus] = useState<{
     config?: { bot_token: string; admin_chat_id: string; configured: boolean };
     bot?: { ok: boolean; username?: string; error?: string };
+    webhook?: {
+      ok: boolean;
+      url?: string;
+      expected_url?: string | null;
+      registered?: boolean;
+      last_error_message?: string;
+      error?: string;
+    };
     note?: string;
   } | null>(null);
   const [telegramTestMsg, setTelegramTestMsg] = useState("");
@@ -113,10 +121,10 @@ export default function AdminOverviewPage() {
         <section className="card mt-4 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="section-title">Telegram admin alerts</h2>
+              <h2 className="section-title">Telegram admin bot</h2>
               <p className="mt-1 text-2xs text-drift-muted">
-                One-way notifications only — the bot will not reply if you message it. Alerts fire on
-                payments, signups, support, and withdrawals.
+                Sends real-time alerts and responds to /start with an admin menu. Message your bot in
+                Telegram and tap Start after deploy.
               </p>
               <ul className="mt-2 space-y-1 text-2xs text-drift-muted">
                 <li>
@@ -140,6 +148,17 @@ export default function AdminOverviewPage() {
                     Connected as @{telegramStatus.bot.username}
                   </li>
                 )}
+                {telegramStatus?.webhook?.ok && (
+                  <li>
+                    Webhook:{" "}
+                    <span className={telegramStatus.webhook.registered ? "text-drift-green" : "text-amber-400"}>
+                      {telegramStatus.webhook.registered ? "registered" : "needs setup"}
+                    </span>
+                  </li>
+                )}
+                {telegramStatus?.webhook?.last_error_message && (
+                  <li className="text-drift-red">{telegramStatus.webhook.last_error_message}</li>
+                )}
                 {telegramStatus?.bot && !telegramStatus.bot.ok && telegramStatus.config?.configured && (
                   <li className="text-drift-red">{telegramStatus.bot.error}</li>
                 )}
@@ -157,13 +176,15 @@ export default function AdminOverviewPage() {
               disabled={telegramTesting}
               className="btn-primary shrink-0 px-4 py-2"
             >
-              {telegramTesting ? "Sending…" : "Send test alert"}
+              {telegramTesting ? "Sending…" : "Register webhook & test"}
             </button>
           </div>
           {telegramTestMsg && (
             <p
               className={`mt-3 text-sm ${
-                telegramTestMsg.includes("check your Telegram") ? "text-drift-green" : "text-drift-red"
+                telegramTestMsg.includes("check Telegram") || telegramTestMsg.includes("/start")
+                  ? "text-drift-green"
+                  : "text-drift-red"
               }`}
             >
               {telegramTestMsg}
