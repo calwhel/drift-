@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StatsRow } from "@/components/stats-card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
@@ -51,6 +52,19 @@ function mapTx(tx: DashboardStats["recentTransactions"][0]): Transaction {
     status: statusMap[tx.status] ?? "Pending",
     date: new Date(tx.createdAt).toLocaleString(),
   };
+}
+
+function AdminDeniedBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("admin_denied") !== "1") return null;
+
+  return (
+    <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      That account does not have platform admin access. You are on the merchant dashboard. Admin access
+      is granted to the email set in <code className="text-amber-100">ADMIN_EMAIL</code> on Railway after
+      sign-up.
+    </p>
+  );
 }
 
 export default function OverviewPage() {
@@ -109,6 +123,9 @@ export default function OverviewPage() {
       <DashboardHeader title="Overview" />
 
       <div className="space-y-6 p-4 sm:p-6">
+        <Suspense fallback={null}>
+          <AdminDeniedBanner />
+        </Suspense>
         <StatsRow live={liveStats} />
 
         <div className="grid gap-4 lg:grid-cols-3">

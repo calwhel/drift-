@@ -10,7 +10,9 @@ export default withAuth(
     }
 
     if (req.nextUrl.pathname.startsWith("/admin") && !token?.isAdmin) {
-      return NextResponse.redirect(new URL("/dashboard/overview", req.url));
+      const url = new URL("/dashboard/overview", req.url);
+      url.searchParams.set("admin_denied", "1");
+      return NextResponse.redirect(url);
     }
 
     return NextResponse.next();
@@ -20,13 +22,7 @@ export default withAuth(
       signIn: "/auth/login",
     },
     callbacks: {
-      authorized: ({ token, req }) => {
-        if (!token) return false;
-        if (req.nextUrl.pathname.startsWith("/admin")) {
-          return token.isAdmin === true;
-        }
-        return true;
-      },
+      authorized: ({ token }) => !!token,
     },
     secret: process.env.NEXTAUTH_SECRET,
   }

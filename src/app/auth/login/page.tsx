@@ -67,8 +67,13 @@ function LoginForm() {
         return;
       }
 
-      // Always stay on the current host — never follow a stale NEXTAUTH_URL redirect.
-      window.location.assign(safeCallback);
+      let destination = safeCallback;
+      if (safeCallback.startsWith("/admin") && !session?.user?.isAdmin) {
+        destination = "/dashboard/overview?admin_denied=1";
+      }
+
+      // Stay on the current host — never follow a stale cross-domain res.url from NextAuth.
+      window.location.assign(destination);
     } catch (err) {
       setError(
         err instanceof Error
