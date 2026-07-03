@@ -23,6 +23,8 @@ function LoginForm() {
 
   const registered = searchParams.get("registered") === "1";
   const authError = searchParams.get("error");
+  const callbackUrl = searchParams.get("callbackUrl");
+  const safeCallback = callbackUrl?.startsWith("/") ? callbackUrl : "/dashboard/overview";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,11 +63,17 @@ function LoginForm() {
 
       const session = await getSession();
       if (session?.user?.twoFactorEnabled && !session?.user?.twoFactorVerified) {
-        window.location.href = "/auth/verify-2fa";
+        window.location.assign("/auth/verify-2fa");
         return;
       }
 
-      window.location.href = res.url ?? "/dashboard/overview";
+      let destination = safeCallback;
+      if (safeCallback.startsWith("/admin") && !session?.user?.isAdmin) {
+        destination = "/dashboard/overview?admin_denied=1";
+      }
+
+      // Stay on the current host — never follow a stale cross-domain res.url from NextAuth.
+      window.location.assign(destination);
     } catch (err) {
       setError(
         err instanceof Error

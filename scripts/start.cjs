@@ -28,6 +28,8 @@ if (!process.env.NEXTAUTH_URL && process.env.RAILWAY_PUBLIC_DOMAIN) {
   console.log(`[start] NEXTAUTH_URL auto-set to ${url}`);
 }
 
+process.env.AUTH_TRUST_HOST = "true";
+
 console.log(`[start] PORT=${port}`);
 console.log(`[start] Launching next start -H 0.0.0.0`);
 

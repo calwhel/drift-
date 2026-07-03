@@ -55,11 +55,18 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
+          let isAdmin = user.isAdmin;
+          const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+          if (!isAdmin && adminEmail && email === adminEmail) {
+            await db.update(users).set({ isAdmin: true }).where(eq(users.id, user.id));
+            isAdmin = true;
+          }
+
           return {
             id: user.id,
             email: user.email,
             name: user.businessName,
-            isAdmin: user.isAdmin,
+            isAdmin,
             twoFactorEnabled: user.twoFactorEnabled,
           };
         } catch (err) {

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { useSidebar } from "@/components/dashboard/sidebar-context";
 import { StatsRow } from "@/components/stats-card";
@@ -17,6 +19,19 @@ const tileClass: Record<string, string> = {
   green: "tile-green",
   orange: "tile-orange",
 };
+
+function AdminDeniedBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("admin_denied") !== "1") return null;
+
+  return (
+    <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      That account does not have platform admin access. You are on the merchant dashboard. Admin access
+      is granted to the email set in <code className="text-amber-100">ADMIN_EMAIL</code> on Railway after
+      sign-up.
+    </p>
+  );
+}
 
 export default function DashboardOverviewPage() {
   const { setOpen } = useSidebar();
@@ -45,6 +60,9 @@ export default function DashboardOverviewPage() {
       />
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <Suspense fallback={null}>
+          <AdminDeniedBanner />
+        </Suspense>
         <StatsRow />
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
