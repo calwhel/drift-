@@ -2,6 +2,7 @@ import { timingSafeEqual } from "crypto";
 import {
   getTelegramWebhookSecret,
   getTelegramWebhookUrl,
+  getTelegramAdminChatId,
   isTelegramConfigured,
   sendTelegramMessageToChat,
   sendTelegramTestNotification,
@@ -28,7 +29,7 @@ function getAppUrl(): string {
 }
 
 function isAdminChat(chatId: number | string): boolean {
-  const adminId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim();
+  const adminId = getTelegramAdminChatId();
   return Boolean(adminId && String(chatId) === adminId);
 }
 

@@ -4,7 +4,7 @@ import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
-import { notifyPaymentCompleted } from "../telegram";
+import { notifyPaymentCompleted, notifyPaymentDetected } from "../telegram";
 
 interface DetectedPayment {
   txHash: string;
@@ -413,6 +413,15 @@ async function getTronTransferConfirmations(txHash: string): Promise<number> {
   return info.blockNumber || info.id ? getRequiredConfirmations("USDT", "TRC20") : 0;
 }
 
+async function getMerchantName(userId: string): Promise<string> {
+  const [merchant] = await db
+    .select({ businessName: users.businessName })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return merchant?.businessName ?? "Unknown";
+}
+
 async function processDetectedPayment(payment: DetectedPayment) {
   if (!payment.txHash) return;
 
@@ -487,6 +496,15 @@ async function processDetectedPayment(payment: DetectedPayment) {
 
     await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
 
+    await notifyPaymentDetected({
+      amount,
+      currency: link.currency,
+      network: link.network,
+      merchantName: await getMerchantName(link.userId),
+      txHash: payment.txHash,
+      status,
+    });
+
     if (
       (status === "confirming" || status === "overpaid") &&
       payment.confirmations >= getRequiredConfirmations(link.currency, link.network)
@@ -529,6 +547,15 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .returning();
 
   await dispatchWebhooks(wallet.userId, tx.id, "transaction.confirming");
+
+  await notifyPaymentDetected({
+    amount: payment.amount,
+    currency: payment.currency,
+    network: payment.network,
+    merchantName: await getMerchantName(wallet.userId),
+    txHash: payment.txHash,
+    status: "confirming",
+  });
 
   if (payment.confirmations >= getRequiredConfirmations(payment.currency, payment.network)) {
     await completeTransaction(tx.id);
@@ -630,18 +657,13 @@ async function completeTransaction(transactionId: string) {
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");
 
-  const [merchant] = await db
-    .select({ businessName: users.businessName })
-    .from(users)
-    .where(eq(users.id, tx.userId))
-    .limit(1);
-
-  notifyPaymentCompleted({
+  await notifyPaymentCompleted({
     amount: tx.amount,
     currency: tx.currency,
     network: tx.network,
-    merchantName: merchant?.businessName ?? "Unknown",
+    merchantName: await getMerchantName(tx.userId),
     feeAmount: fee,
     netAmount: net,
+    txHash: tx.txHash,
   });
 }
