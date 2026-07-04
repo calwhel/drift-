@@ -24,3 +24,19 @@ export function getUserInitials(name?: string | null): string {
   }
   return name.slice(0, 2).toUpperCase();
 }
+
+export function blockExplorerAddressUrl(address: string, network: string): string {
+  switch (network) {
+    case "TRC20":
+      return `https://tronscan.org/#/address/${address}`;
+    case "ERC20":
+      return `https://etherscan.io/address/${address}`;
+    case "SPL":
+    case "Solana":
+      return `https://solscan.io/account/${address}`;
+    case "Bitcoin":
+      return `https://blockstream.info/address/${address}`;
+    default:
+      return `https://etherscan.io/address/${address}`;
+  }
+}

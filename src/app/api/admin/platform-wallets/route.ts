@@ -5,6 +5,7 @@ import { db, platformWallets } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { validateWalletAddress } from "@/lib/wallet/generate";
 import { PLATFORM_WALLET_NETWORKS } from "@/lib/constants";
+import { fetchOnChainBalancesForWallets } from "@/lib/blockchain/balances";
 
 const walletSchema = z.object({
   currency: z.string().min(1).max(20),
@@ -31,8 +32,23 @@ export async function GET() {
 
   const rows = await db.select().from(platformWallets).orderBy(asc(platformWallets.currency));
 
+  const withBalances = await fetchOnChainBalancesForWallets(
+    rows.map((row) => ({
+      ...row,
+      address: row.address,
+      currency: row.currency,
+      network: row.network,
+    }))
+  );
+
   return NextResponse.json({
-    data: rows,
+    data: withBalances.map(({ onChain, ...row }) => ({
+      ...row,
+      onChainBalance: onChain.amount,
+      onChainError: onChain.error,
+      nativeGasBalance: onChain.nativeGas?.amount ?? null,
+      nativeGasSymbol: onChain.nativeGas?.symbol ?? null,
+    })),
     supportedNetworks: PLATFORM_WALLET_NETWORKS,
   });
 }

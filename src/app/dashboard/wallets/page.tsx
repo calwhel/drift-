@@ -6,7 +6,7 @@ import { DashboardHeader } from "@/components/dashboard/header";
 import { WalletBalanceChart, type BalanceChartPoint } from "@/components/dashboard/wallet-balance-chart";
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon, type IconName } from "@/components/icons";
-import { cn } from "@/lib/utils";
+import { cn, blockExplorerAddressUrl } from "@/lib/utils";
 import { MERCHANT_WALLET_NETWORKS, getNetworkLabel } from "@/lib/constants";
 import { walletQuickActions } from "@/lib/mock-data";
 
@@ -36,6 +36,10 @@ interface WalletRow {
   balance: string;
   walletType: string;
   label: string | null;
+  onChainBalance?: number | null;
+  onChainError?: string;
+  nativeGasBalance?: number | null;
+  nativeGasSymbol?: string | null;
 }
 
 interface ActivityItem {
@@ -51,6 +55,7 @@ export default function WalletsPage() {
   const [totalBalance, setTotalBalance] = useState(0);
   const [range, setRange] = useState("30D");
   const [loading, setLoading] = useState(false);
+  const [refreshingBalances, setRefreshingBalances] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showAddWallet, setShowAddWallet] = useState(false);
@@ -118,14 +123,16 @@ export default function WalletsPage() {
       .catch(() => setChartData([]));
   }, []);
 
-  const load = useCallback(() => {
+  const load = useCallback((showRefresh = false) => {
+    if (showRefresh) setRefreshingBalances(true);
     fetch("/api/wallets")
       .then((r) => (r.ok ? r.json() : { wallets: [], totalBalance: 0 }))
       .then((d) => {
         setWallets(d.wallets ?? []);
         setTotalBalance(d.totalBalance ?? 0);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setRefreshingBalances(false));
     loadActivity();
   }, [loadActivity]);
 
@@ -235,15 +242,25 @@ export default function WalletsPage() {
     <>
       <DashboardHeader
         title="Wallets"
-        subtitle="Manage all your wallets and view balances."
+        subtitle="Ledger balance (Drift) and live on-chain balance per wallet."
         actions={
-          <button
-            onClick={() => setShowAddWallet(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#6d28d9]"
-          >
-            <Icon name="Plus" className="h-4 w-4" />
-            <span className="hidden sm:inline">Create Wallet</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => load(true)}
+              disabled={refreshingBalances}
+              className="flex items-center gap-1.5 rounded-lg border border-drift-border bg-drift-card px-3.5 py-2 text-[13px] text-white hover:bg-white/5 disabled:opacity-50"
+            >
+              {refreshingBalances ? "Refreshing…" : "Refresh on-chain"}
+            </button>
+            <button
+              onClick={() => setShowAddWallet(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-[#7c3aed] px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-[#6d28d9]"
+            >
+              <Icon name="Plus" className="h-4 w-4" />
+              <span className="hidden sm:inline">Create Wallet</span>
+            </button>
+          </div>
         }
       />
 
@@ -305,7 +322,8 @@ export default function WalletsPage() {
                     <thead>
                       <tr className="border-b border-drift-border text-[12px] text-drift-muted">
                         <th className="px-5 py-3 font-medium">Wallet</th>
-                        <th className="px-5 py-3 font-medium">Balance</th>
+                        <th className="px-5 py-3 font-medium">Ledger</th>
+                        <th className="px-5 py-3 font-medium">On-chain</th>
                         <th className="px-5 py-3 font-medium">Network</th>
                         <th className="px-5 py-3 font-medium">Address</th>
                         <th className="px-5 py-3 text-right font-medium">Actions</th>
@@ -343,6 +361,23 @@ export default function WalletsPage() {
                             <p className="text-[13px] font-medium tabular-nums text-white">
                               {Number(w.balance).toFixed(4)} {w.currency}
                             </p>
+                            <p className="text-[10px] text-drift-muted">Drift ledger</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            {w.onChainError ? (
+                              <p className="text-[11px] text-red-400">{w.onChainError}</p>
+                            ) : (
+                              <>
+                                <p className="text-[13px] font-medium tabular-nums text-drift-green">
+                                  {(w.onChainBalance ?? 0).toFixed(4)} {w.currency}
+                                </p>
+                                {w.nativeGasSymbol != null && w.nativeGasBalance != null && (
+                                  <p className="text-[10px] text-drift-muted">
+                                    Gas: {w.nativeGasBalance.toFixed(4)} {w.nativeGasSymbol}
+                                  </p>
+                                )}
+                              </>
+                            )}
                           </td>
                           <td className="px-5 py-4">
                             <span
@@ -365,6 +400,14 @@ export default function WalletsPage() {
                               >
                                 <Icon name="Copy" className="h-3.5 w-3.5" />
                               </button>
+                              <a
+                                href={blockExplorerAddressUrl(w.address, w.network)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] text-drift-purple hover:underline"
+                              >
+                                Explorer
+                              </a>
                             </div>
                           </td>
                           <td className="px-5 py-4">

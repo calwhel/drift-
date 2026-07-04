@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { MERCHANT_WALLET_NETWORKS, type WalletType } from "@/lib/constants";
 import { generateWalletForNetwork, validateWalletAddress } from "@/lib/wallet/generate";
 import { logAudit } from "@/lib/audit";
+import { fetchOnChainBalancesForWallets } from "@/lib/blockchain/balances";
 
 const createSchema = z.object({
   type: z.enum(["connected", "generated"]),
@@ -37,10 +38,20 @@ export async function GET() {
       .from(wallets)
       .where(eq(wallets.userId, user.id));
 
-    const totalBalance = userWallets.reduce((s, w) => s + Number(w.balance), 0);
+    const withBalances = await fetchOnChainBalancesForWallets(userWallets);
+
+    const enrichedWallets = withBalances.map(({ onChain, ...wallet }) => ({
+      ...wallet,
+      onChainBalance: onChain.amount,
+      onChainError: onChain.error,
+      nativeGasBalance: onChain.nativeGas?.amount ?? null,
+      nativeGasSymbol: onChain.nativeGas?.symbol ?? null,
+    }));
+
+    const totalBalance = enrichedWallets.reduce((s, w) => s + Number(w.balance), 0);
 
     return NextResponse.json({
-      wallets: userWallets,
+      wallets: enrichedWallets,
       totalBalance,
       supportedNetworks: MERCHANT_WALLET_NETWORKS,
     });

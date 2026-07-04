@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { useAdminSidebar } from "@/components/admin/sidebar-context";
 import { PLATFORM_WALLET_NETWORKS } from "@/lib/constants";
+import { blockExplorerAddressUrl } from "@/lib/utils";
 
 interface PlatformWallet {
   id: string;
@@ -12,6 +13,10 @@ interface PlatformWallet {
   address: string;
   label: string | null;
   isActive: boolean;
+  onChainBalance?: number | null;
+  onChainError?: string;
+  nativeGasBalance?: number | null;
+  nativeGasSymbol?: string | null;
 }
 
 export default function AdminWalletsPage() {
@@ -26,8 +31,10 @@ export default function AdminWalletsPage() {
     label: "",
   });
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => {
+  const load = (showRefresh = false) => {
+    if (showRefresh) setRefreshing(true);
     fetch("/api/admin/platform-wallets")
       .then(async (r) => {
         if (!r.ok) {
@@ -37,7 +44,8 @@ export default function AdminWalletsPage() {
         return r.json();
       })
       .then((d) => setWallets(d.data ?? []))
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(err.message))
+      .finally(() => setRefreshing(false));
   };
 
   useEffect(() => {
@@ -93,8 +101,18 @@ export default function AdminWalletsPage() {
     <>
       <DashboardHeader
         title="Platform Wallets"
-        subtitle="Fee collection addresses — 1.5% of each completed transaction routes here"
+        subtitle="Fee collection addresses — live on-chain balances shown below"
         onMenuClick={() => setOpen(true)}
+        actions={
+          <button
+            type="button"
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="btn-secondary px-3 py-2 text-2xs"
+          >
+            {refreshing ? "Refreshing…" : "Refresh balances"}
+          </button>
+        }
       />
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
@@ -133,9 +151,36 @@ export default function AdminWalletsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-white">{net.label}</p>
                         {wallet ? (
-                          <p className="mt-1 break-all font-mono text-2xs text-drift-muted">
-                            {wallet.address}
-                          </p>
+                          <>
+                            <p className="mt-1 break-all font-mono text-2xs text-drift-muted">
+                              {wallet.address}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs">
+                              <span className="text-white">
+                                On-chain:{" "}
+                                {wallet.onChainError ? (
+                                  <span className="text-drift-red">{wallet.onChainError}</span>
+                                ) : (
+                                  <span className="font-semibold text-drift-green">
+                                    {(wallet.onChainBalance ?? 0).toFixed(4)} {net.currency}
+                                  </span>
+                                )}
+                              </span>
+                              {wallet.nativeGasSymbol != null && wallet.nativeGasBalance != null && (
+                                <span className="text-drift-muted">
+                                  Gas: {wallet.nativeGasBalance.toFixed(4)} {wallet.nativeGasSymbol}
+                                </span>
+                              )}
+                              <a
+                                href={blockExplorerAddressUrl(wallet.address, net.network)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-drift-purple hover:underline"
+                              >
+                                View on explorer →
+                              </a>
+                            </div>
+                          </>
                         ) : (
                           <p className="mt-1 text-2xs text-drift-red">Not configured</p>
                         )}
