@@ -109,6 +109,13 @@ export default function AdminWalletsPage() {
           </p>
         )}
 
+        <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          These are <strong>fee collection</strong> addresses — where Drift sweeps the 1.5% platform fee.
+          Sending test payments here will <strong>not</strong> update merchant balances. To test payments,
+          create a Drift custodial wallet under Dashboard → Wallets, then send USDT to that address
+          (or create a payment link for a specific amount).
+        </p>
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <section className="card p-4">
             <h2 className="section-title mb-3">Configured Wallets</h2>

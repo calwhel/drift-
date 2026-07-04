@@ -15,7 +15,99 @@ interface DetectedPayment {
   depositAddress: string;
 }
 
+interface PollTarget {
+  address: string;
+  currency: string;
+  network: string;
+}
+
 const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
+
+function pollTargetKey(address: string, currency: string, network: string) {
+  return `${address}|${currency}|${network}`;
+}
+
+function addressesMatch(stored: string, observed: string, network: string): boolean {
+  const a = stored.trim();
+  const b = observed.trim();
+  if (a === b) return true;
+  if (network === "ERC20" || network === "BEP20") {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+  return false;
+}
+
+async function getPollTargets(): Promise<PollTarget[]> {
+  const now = new Date();
+  const activeLinks = await db
+    .select()
+    .from(paymentLinks)
+    .where(eq(paymentLinks.status, "active"));
+  const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
+
+  const generatedWallets = await db
+    .select({
+      address: wallets.address,
+      currency: wallets.currency,
+      network: wallets.network,
+    })
+    .from(wallets)
+    .where(eq(wallets.walletType, "generated"));
+
+  const targets = new Map<string, PollTarget>();
+
+  for (const link of validLinks) {
+    targets.set(pollTargetKey(link.depositAddress, link.currency, link.network), {
+      address: link.depositAddress,
+      currency: link.currency,
+      network: link.network,
+    });
+  }
+
+  for (const wallet of generatedWallets) {
+    targets.set(pollTargetKey(wallet.address, wallet.currency, wallet.network), {
+      address: wallet.address,
+      currency: wallet.currency,
+      network: wallet.network,
+    });
+  }
+
+  return Array.from(targets.values());
+}
+
+async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
+  const { address, currency, network } = target;
+
+  if (network === "TRC20" && currency === "USDT") {
+    return pollTron(address);
+  }
+  if (network === "ERC20") {
+    if (!process.env.ETHERSCAN_API_KEY) {
+      return [];
+    }
+    return pollEvm(address, currency, network, "https://api.etherscan.io/api", process.env.ETHERSCAN_API_KEY);
+  }
+  if (network === "BEP20" && process.env.BSCSCAN_API_KEY) {
+    return pollEvm(
+      address,
+      currency,
+      network,
+      "https://api.bscscan.com/api",
+      process.env.BSCSCAN_API_KEY
+    );
+  }
+  if (network === "Bitcoin") {
+    return pollBitcoin(address);
+  }
+  if (network === "SPL" && currency === "USDT") {
+    return pollSolanaSpl(address);
+  }
+  if (network === "Solana") {
+    return pollSolana(address);
+  }
+
+  return [];
+}
 
 async function pollTron(address: string): Promise<DetectedPayment[]> {
   const apiKey = process.env.TRONGRID_API_KEY;
@@ -29,7 +121,7 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
   return (data.data ?? [])
     .filter(
       (tx: Record<string, unknown>) =>
-        tx.to === address &&
+        addressesMatch(address, String(tx.to ?? ""), "TRC20") &&
         tx.token_info &&
         (tx.token_info as { address: string }).address === USDT_TRC20
     )
@@ -65,7 +157,7 @@ async function pollEvm(
   return (data.result ?? [])
     .filter(
       (tx: Record<string, string>) =>
-        tx.to?.toLowerCase() === address.toLowerCase() &&
+        addressesMatch(address, tx.to ?? "", network) &&
         (!contract || tx.contractAddress?.toLowerCase() === contract.toLowerCase())
     )
     .slice(0, 15)
@@ -234,50 +326,19 @@ async function pollSolana(address: string): Promise<DetectedPayment[]> {
 }
 
 export async function pollAllNetworks() {
-  const activeLinks = await db
-    .select()
-    .from(paymentLinks)
-    .where(eq(paymentLinks.status, "active"));
-
-  const now = new Date();
-  const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
-
+  const targets = await getPollTargets();
   const detected: DetectedPayment[] = [];
 
-  for (const link of validLinks) {
-    const { depositAddress: address, currency, network } = link;
+  const needsEtherscan = targets.some((t) => t.network === "ERC20");
+  if (needsEtherscan && !process.env.ETHERSCAN_API_KEY) {
+    console.warn("[payment-poller] ETHERSCAN_API_KEY missing — ERC20 payments will not be detected");
+  }
+
+  for (const target of targets) {
     try {
-      if (network === "TRC20" && currency === "USDT") {
-        detected.push(...(await pollTron(address)));
-      } else if (network === "ERC20" && process.env.ETHERSCAN_API_KEY) {
-        detected.push(
-          ...(await pollEvm(
-            address,
-            currency,
-            network,
-            "https://api.etherscan.io/api",
-            process.env.ETHERSCAN_API_KEY
-          ))
-        );
-      } else if (network === "BEP20" && process.env.BSCSCAN_API_KEY) {
-        detected.push(
-          ...(await pollEvm(
-            address,
-            currency,
-            network,
-            "https://api.bscscan.com/api",
-            process.env.BSCSCAN_API_KEY
-          ))
-        );
-      } else if (network === "Bitcoin") {
-        detected.push(...(await pollBitcoin(address)));
-      } else if (network === "SPL" && currency === "USDT") {
-        detected.push(...(await pollSolanaSpl(address)));
-      } else if (network === "Solana") {
-        detected.push(...(await pollSolana(address)));
-      }
+      detected.push(...(await pollAddress(target)));
     } catch (err) {
-      console.error(`Poll error ${network}/${currency} for ${address}:`, err);
+      console.error(`Poll error ${target.network}/${target.currency} for ${target.address}:`, err);
     }
   }
 
@@ -346,31 +407,74 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .orderBy(desc(paymentLinks.createdAt))
     .limit(1);
 
-  if (!link) return;
-  if (link.expiry && link.expiry < new Date()) return;
+  if (link) {
+    if (link.expiry && link.expiry < new Date()) return;
 
-  const expectedAmount = Number(link.amount);
-  const tolerance = expectedAmount * 0.01;
-  let status = "confirming";
+    const expectedAmount = Number(link.amount);
+    const tolerance = expectedAmount * 0.01;
+    let status = "confirming";
 
-  if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
-    status = "underpaid";
-  } else if (payment.amount > expectedAmount + tolerance) {
-    status = "overpaid";
+    if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
+      status = "underpaid";
+    } else if (payment.amount > expectedAmount + tolerance) {
+      status = "overpaid";
+    }
+
+    const amount = payment.amount || expectedAmount;
+    const { feeAmount, netAmount } = calculateFee(amount);
+
+    const [tx] = await db
+      .insert(transactions)
+      .values({
+        paymentLinkId: link.id,
+        userId: link.userId,
+        amount: String(amount),
+        currency: link.currency,
+        network: link.network,
+        status,
+        txHash: payment.txHash,
+        feeAmount: String(feeAmount),
+        netAmount: String(netAmount),
+        confirmations: String(payment.confirmations),
+      })
+      .returning();
+
+    await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
+
+    if (
+      (status === "confirming" || status === "overpaid") &&
+      payment.confirmations >= getRequiredConfirmations(link.currency, link.network)
+    ) {
+      await completeTransaction(tx.id);
+    }
+    return;
   }
 
-  const amount = payment.amount || expectedAmount;
-  const { feeAmount, netAmount } = calculateFee(amount);
+  const [wallet] = await db
+    .select()
+    .from(wallets)
+    .where(
+      and(
+        eq(wallets.address, payment.depositAddress),
+        eq(wallets.currency, payment.currency),
+        eq(wallets.network, payment.network),
+        eq(wallets.walletType, "generated")
+      )
+    )
+    .limit(1);
+
+  if (!wallet || payment.amount <= 0) return;
+
+  const { feeAmount, netAmount } = calculateFee(payment.amount);
 
   const [tx] = await db
     .insert(transactions)
     .values({
-      paymentLinkId: link.id,
-      userId: link.userId,
-      amount: String(amount),
-      currency: link.currency,
-      network: link.network,
-      status,
+      userId: wallet.userId,
+      amount: String(payment.amount),
+      currency: payment.currency,
+      network: payment.network,
+      status: "confirming",
       txHash: payment.txHash,
       feeAmount: String(feeAmount),
       netAmount: String(netAmount),
@@ -378,12 +482,9 @@ async function processDetectedPayment(payment: DetectedPayment) {
     })
     .returning();
 
-  await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
+  await dispatchWebhooks(wallet.userId, tx.id, "transaction.confirming");
 
-  if (
-    (status === "confirming" || status === "overpaid") &&
-    payment.confirmations >= getRequiredConfirmations(link.currency, link.network)
-  ) {
+  if (payment.confirmations >= getRequiredConfirmations(payment.currency, payment.network)) {
     await completeTransaction(tx.id);
   }
 }
@@ -468,6 +569,17 @@ async function completeTransaction(transactionId: string) {
         link.walletId
       );
     }
+  } else if (wallet) {
+    await queueSettlements(
+      transactionId,
+      tx.userId,
+      tx.currency,
+      tx.network,
+      fee,
+      net,
+      null,
+      wallet.id
+    );
   }
 
   await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");

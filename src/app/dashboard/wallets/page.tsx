@@ -259,6 +259,12 @@ export default function WalletsPage() {
           </p>
         )}
 
+        <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
+          Drift-generated wallets are polled every 60 seconds. Send the correct token on the matching
+          network (e.g. USDT TRC20 to a TRC20 address). Balance updates after on-chain confirmations.
+          For checkout flows, create a payment link with the exact amount.
+        </p>
+
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
             <div className="card-elevated p-5">

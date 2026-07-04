@@ -20,6 +20,10 @@ export async function GET() {
     nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
     telegram_bot_token: telegram.bot_token,
     telegram_admin_chat_id: telegram.admin_chat_id,
+    etherscan_api_key: process.env.ETHERSCAN_API_KEY ? "set" : "missing",
+    trongrid_api_key: process.env.TRONGRID_API_KEY ? "set" : "missing",
+    solana_rpc_url: process.env.SOLANA_RPC_URL ? "set" : "default",
+    payment_poller: "in-process (60s)",
   };
 
   const body: Record<string, unknown> = {
