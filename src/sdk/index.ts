@@ -9,6 +9,7 @@ export interface CreatePaymentLinkParams {
   amount: number;
   currency: string;
   network?: string;
+  wallet_id?: string;
   expiry?: string;
   redirect_url?: string;
 }

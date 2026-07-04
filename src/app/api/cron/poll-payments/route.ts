@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { runPaymentPollCycle } from "@/lib/payment-poller";
 
 function isCronAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return process.env.NODE_ENV !== "production";
-  }
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) return false;
+
   const auth = req.headers.get("authorization");
   const headerSecret = req.headers.get("x-cron-secret");
   return auth === `Bearer ${secret}` || headerSecret === secret;

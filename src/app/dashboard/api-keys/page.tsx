@@ -7,6 +7,7 @@ export default function ApiKeysPage() {
   const [keys, setKeys] = useState<Array<{ id: string; name: string; keyPrefix: string; createdAt: string }>>([]);
   const [newKey, setNewKey] = useState<string | null>(null);
   const [name, setName] = useState("Production");
+  const [revokingId, setRevokingId] = useState<string | null>(null);
 
   const load = () => fetch("/api/api-keys").then((r) => r.json()).then(setKeys);
 
@@ -22,6 +23,20 @@ export default function ApiKeysPage() {
     const data = await res.json();
     setNewKey(data.api_key);
     load();
+  }
+
+  async function revokeKey(id: string, keyName: string) {
+    if (!confirm(`Revoke API key "${keyName}"? Integrations using it will stop working immediately.`)) {
+      return;
+    }
+
+    setRevokingId(id);
+    try {
+      const res = await fetch(`/api/api-keys/${id}`, { method: "DELETE" });
+      if (res.ok) load();
+    } finally {
+      setRevokingId(null);
+    }
   }
 
   return (
@@ -42,12 +57,22 @@ export default function ApiKeysPage() {
         </div>
         <div className="card mt-4 divide-y divide-drift-border">
           {keys.map((k) => (
-            <div key={k.id} className="flex items-center justify-between px-4 py-3 text-sm">
+            <div key={k.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
               <div>
                 <p className="text-white">{k.name}</p>
                 <p className="font-mono text-2xs text-drift-muted">{k.keyPrefix}…</p>
               </div>
-              <p className="text-2xs text-drift-muted">{new Date(k.createdAt).toLocaleDateString()}</p>
+              <div className="flex items-center gap-3">
+                <p className="text-2xs text-drift-muted">{new Date(k.createdAt).toLocaleDateString()}</p>
+                <button
+                  type="button"
+                  onClick={() => revokeKey(k.id, k.name)}
+                  disabled={revokingId === k.id}
+                  className="text-2xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  {revokingId === k.id ? "Revoking…" : "Revoke"}
+                </button>
+              </div>
             </div>
           ))}
         </div>

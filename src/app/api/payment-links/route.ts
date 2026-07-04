@@ -12,7 +12,7 @@ const createSchema = z.object({
   amount: z.number().positive(),
   currency: z.string(),
   network: z.string().optional(),
-  wallet_id: z.string().uuid(),
+  wallet_id: z.string().uuid().optional(),
   expiry: z.string().datetime().optional().nullable(),
   redirect_url: z.string().url().optional().nullable(),
 });
@@ -40,11 +40,44 @@ export async function POST(req: NextRequest) {
 
     const currency = data.currency.toUpperCase();
 
-    const [wallet] = await db
-      .select()
-      .from(wallets)
-      .where(and(eq(wallets.id, data.wallet_id), eq(wallets.userId, auth.userId)))
-      .limit(1);
+    let wallet;
+    if (data.wallet_id) {
+      [wallet] = await db
+        .select()
+        .from(wallets)
+        .where(and(eq(wallets.id, data.wallet_id), eq(wallets.userId, auth.userId)))
+        .limit(1);
+    } else {
+      const conditions = [eq(wallets.userId, auth.userId), eq(wallets.currency, currency)];
+      if (data.network) conditions.push(eq(wallets.network, data.network));
+
+      const matches = await db
+        .select()
+        .from(wallets)
+        .where(and(...conditions));
+
+      if (matches.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "No wallet found for this currency. Create a wallet in the dashboard or provide wallet_id.",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (matches.length > 1) {
+        return NextResponse.json(
+          {
+            error:
+              "Multiple wallets match this currency. Specify network or wallet_id.",
+          },
+          { status: 400 }
+        );
+      }
+
+      wallet = matches[0];
+    }
 
     if (!wallet) {
       return NextResponse.json({ error: "Wallet not found" }, { status: 404 });

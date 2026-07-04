@@ -1,6 +1,8 @@
+import { timingSafeEqual } from "crypto";
 import {
   getTelegramWebhookSecret,
   getTelegramWebhookUrl,
+  isTelegramConfigured,
   sendTelegramMessageToChat,
   sendTelegramTestNotification,
   verifyTelegramBot,
@@ -209,7 +211,11 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 }
 
 export function isValidTelegramWebhookSecret(header: string | null): boolean {
+  if (!isTelegramConfigured()) return true;
+
   const secret = getTelegramWebhookSecret();
-  if (!secret) return true;
-  return header === secret;
+  if (!secret || !header) return false;
+  if (header.length !== secret.length) return false;
+
+  return timingSafeEqual(Buffer.from(header), Buffer.from(secret));
 }
