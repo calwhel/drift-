@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db, transactions } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
 
     const rows = await db
       .select()

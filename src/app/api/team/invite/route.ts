@@ -3,7 +3,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { db, users, teamInvitations } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 const schema = z.object({
@@ -13,7 +13,7 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireTwoFactorVerified();
     const body = await req.json();
     const data = schema.parse(body);
 
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireTwoFactorVerified();
     const [user] = await db
       .select()
       .from(users)

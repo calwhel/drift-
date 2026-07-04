@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { db, apiKeys } from "./db";
-import { requireUser } from "./auth";
+import { requireTwoFactorVerified } from "./auth";
 
 export function hashApiKey(key: string) {
   return createHash("sha256").update(key).digest("hex");
@@ -33,7 +33,7 @@ export async function authenticateRequest(req: NextRequest) {
   }
 
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
     return { userId: user.id, via: "session" as const };
   } catch {
     return null;

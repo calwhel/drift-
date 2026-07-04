@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifySupportRequest } from "@/lib/telegram";
 
@@ -11,7 +11,7 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
 
     const ip = req.headers.get("x-forwarded-for") ?? user.id;
     const limit = rateLimit(`support:${ip}`, 5, 60_000);

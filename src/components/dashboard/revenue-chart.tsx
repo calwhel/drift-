@@ -9,7 +9,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { revenueData } from "@/lib/mock-data";
 
 interface ApiRevenuePoint {
   date: string;
@@ -27,7 +26,21 @@ export function RevenueChart({ data, height = 280 }: RevenueChartProps) {
         label: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         value: Number(d.revenue),
       }))
-    : revenueData;
+    : [];
+
+  if (chartData.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center rounded-xl border border-dashed border-drift-border text-center"
+        style={{ height }}
+      >
+        <p className="text-sm font-medium text-white">No revenue yet</p>
+        <p className="mt-1 max-w-xs text-xs text-drift-muted">
+          Completed payments will appear here. Create a payment link to get started.
+        </p>
+      </div>
+    );
+  }
 
   const maxValue = Math.max(...chartData.map((d) => d.value), 1);
   const yMax = Math.ceil(maxValue / 5000) * 5000 || 30000;

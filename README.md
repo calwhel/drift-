@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Drift Payment
 
-## Getting Started
+Crypto payment platform for businesses — accept USDT (TRC20, ERC20, Solana), manage wallets, payment links, and transactions.
 
-First, run the development server:
+**Live:** https://drift-production-9c09.up.railway.app
+
+## Features
+
+- Merchant dashboards with live transaction data
+- Custodial wallet generation + connected wallets
+- Payment links with QR checkout
+- Automatic on-chain payment detection (60s poller)
+- 1.5% platform fee with admin fee wallets
+- Telegram admin alerts
+- API keys + webhooks
+
+## Local development
 
 ```bash
+npm install
+cp .env.local.example .env.local
+# Fill DATABASE_URL, NEXTAUTH_SECRET, etc.
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Production deploy (Railway)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Connect repo to Railway
+2. Set variables from `.env.local.example` (minimum: `DATABASE_URL`, `NEXTAUTH_SECRET`, `ADMIN_EMAIL`)
+3. Add blockchain keys: `TRONGRID_API_KEY`, `ETHERSCAN_API_KEY` for payment detection
+4. Railway runs migrations + admin seed on deploy (`railway.toml`)
+5. Sign up with the `ADMIN_EMAIL` address, then visit `/admin`
 
-## Learn More
+`NEXTAUTH_URL` is auto-set from `RAILWAY_PUBLIC_DOMAIN` on start.
 
-To learn more about Next.js, take a look at the following resources:
+## Public launch checklist
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [ ] `DATABASE_URL`, `NEXTAUTH_SECRET`, `ADMIN_EMAIL` set
+- [ ] `TRONGRID_API_KEY` + `ETHERSCAN_API_KEY` for USDT detection
+- [ ] `MASTER_WALLET_MNEMONIC` — unique production mnemonic (never use the example phrase)
+- [ ] `WALLET_ENCRYPTION_KEY` — random 32+ chars
+- [ ] Admin platform fee wallets configured at `/admin/wallets`
+- [ ] Telegram vars for admin alerts (optional)
+- [ ] Run `npm run smoke:test` after deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run smoke:test` | HTTP smoke test against live URL |
+| `npm run db:migrate` | Apply SQL migrations |
+| `npm run db:seed-admin` | Promote `ADMIN_EMAIL` user to admin |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Docs
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- API reference: `/developers`
+- Terms: `/terms`
+- Privacy: `/privacy`
+- Demo checkout preview: `/demo`

@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, users } from "./db";
+import { rateLimit } from "./rate-limit";
 
 const isProduction = process.env.NODE_ENV === "production";
 const useSecureCookies =
@@ -39,6 +40,12 @@ export const authOptions: NextAuthOptions = {
 
         try {
           const email = credentials.email.toLowerCase().trim();
+
+          const loginLimit = rateLimit(`login:${email}`, 20, 60_000);
+          if (!loginLimit.allowed) {
+            console.warn("[auth] Login rate limit exceeded for", email);
+            return null;
+          }
 
           const [user] = await db
             .select()

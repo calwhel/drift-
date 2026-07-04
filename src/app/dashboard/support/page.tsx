@@ -29,7 +29,7 @@ export default function SupportPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to send message");
 
-      setSuccess("Your message was sent. Our team will get back to you by email.");
+      setSuccess("Your message was sent. Our team will respond as soon as possible.");
       setSubject("");
       setMessage("");
     } catch (err) {

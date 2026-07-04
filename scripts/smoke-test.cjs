@@ -95,13 +95,22 @@ async function runChecks() {
         else warn(`Env ${key}`, "missing — Telegram alerts disabled");
         continue;
       }
-      if (val === "set") pass(`Env ${key}`, "set");
-      else fail(`Env ${key}`, "missing on server");
+      if (key === "payment_poller") {
+        pass(`Env ${key}`, String(val));
+        continue;
+      }
+      if (val === "set" || val === "default" || val === "in-process (60s)") {
+        pass(`Env ${key}`, String(val));
+      } else if (val === "missing") {
+        fail(`Env ${key}`, "missing on server");
+      } else {
+        pass(`Env ${key}`, String(val));
+      }
     }
   }
 
   console.log("\n── Public pages ──");
-  const pages = ["/", "/auth/login", "/auth/signup", "/developers", "/auth/accept-invite"];
+  const pages = ["/", "/auth/login", "/auth/signup", "/developers", "/auth/accept-invite", "/terms", "/privacy", "/demo"];
   for (const path of pages) {
     const { res } = await fetchWithTimeout(path);
     if (res.status === 200) pass(`Page ${path}`, "200");

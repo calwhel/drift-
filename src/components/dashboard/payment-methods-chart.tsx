@@ -1,7 +1,6 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { paymentMethodsData } from "@/lib/mock-data";
 import { CHART_COLORS } from "@/lib/constants";
 
 const FALLBACK_COLORS = ["#22c55e", "#f59e0b", "#3b82f6", "#7c3aed", "#14b8a6"];
@@ -23,13 +22,22 @@ export function PaymentMethodsChart({ data, total, centerValue }: PaymentMethods
           value: Math.round((value / (sum || 1)) * 1000) / 10,
           color: CHART_COLORS[name] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
         }))
-      : paymentMethodsData;
+      : [];
 
   const displayTotal =
     centerValue ??
-    (total != null
+    (total != null && total > 0
       ? `$${total.toLocaleString(undefined, { minimumFractionDigits: 0 })}`
-      : "$24,560");
+      : "$0");
+
+  if (chartData.length === 0) {
+    return (
+      <div className="flex min-h-[150px] flex-col items-center justify-center rounded-xl border border-dashed border-drift-border py-8 text-center">
+        <p className="text-sm font-medium text-white">No payments yet</p>
+        <p className="mt-1 text-xs text-drift-muted">Breakdown by currency appears after your first sale.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-4">

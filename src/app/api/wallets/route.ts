@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { db, wallets } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 import { MERCHANT_WALLET_NETWORKS, type WalletType } from "@/lib/constants";
 import { generateWalletForNetwork, validateWalletAddress } from "@/lib/wallet/generate";
 import { logAudit } from "@/lib/audit";
@@ -24,7 +24,7 @@ function isSupportedNetwork(currency: string, network: string) {
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
     const userWallets = await db
       .select({
         id: wallets.id,
@@ -62,7 +62,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
     const body = await req.json();
     const data = createSchema.parse(body);
 
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) {

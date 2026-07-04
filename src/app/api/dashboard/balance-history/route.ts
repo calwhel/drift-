@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, and, gte } from "drizzle-orm";
 import { db, transactions, withdrawals } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 
 const RANGE_DAYS: Record<string, number> = {
   "7D": 7,
@@ -16,7 +16,7 @@ function formatLabel(date: Date): string {
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await requireTwoFactorVerified();
     const range = req.nextUrl.searchParams.get("range") ?? "30D";
     const days = RANGE_DAYS[range] ?? 30;
 

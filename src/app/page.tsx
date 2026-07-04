@@ -4,29 +4,7 @@ import { LogoMark } from "@/components/landing/logo-mark";
 import { HeroMockup } from "@/components/landing/hero-mockup";
 import { FloatingCoins } from "@/components/landing/floating-coins";
 import { Icon } from "@/components/icons";
-import { heroFeatures, landingFeatures, trustedLogos } from "@/lib/mock-data";
-
-function TrustedLogosMarquee() {
-  const logos = [...trustedLogos, ...trustedLogos];
-
-  return (
-    <div className="relative mt-8 overflow-hidden">
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-[#0a0a0f] to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-[#0a0a0f] to-transparent" />
-      <div className="flex w-max animate-marquee items-center gap-12 px-4">
-        {logos.map((logo, i) => (
-          <span
-            key={`${logo.name}-${i}`}
-            className="flex shrink-0 items-center gap-2.5 text-[15px] font-semibold text-[#4b5563]"
-          >
-            <Icon name={logo.icon as "Coins"} className="h-[18px] w-[18px]" />
-            {logo.name}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+import { heroFeatures, landingFeatures } from "@/lib/mock-data";
 
 export default function LandingPage() {
   return (
@@ -82,7 +60,7 @@ export default function LandingPage() {
                 <span aria-hidden>→</span>
               </Link>
               <Link
-                href="/pay/abc123"
+                href="/demo"
                 className="inline-flex items-center rounded-lg border border-[#2a2a38] bg-transparent px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:border-[#3f3f50] hover:bg-[#111118]"
               >
                 View Demo
@@ -126,13 +104,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Trusted by ── */}
+      {/* ── Highlights ── */}
       <section className="border-y border-[#1e1e2e] py-12">
         <div className="mx-auto max-w-[1280px] px-5 lg:px-8">
           <p className="text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-[#6b7280]">
-            Trusted by businesses worldwide
+            Built for crypto commerce
           </p>
-          <TrustedLogosMarquee />
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[14px] text-[#9ca3af]">
+            {["USDT on TRC20, ERC20 & Solana", "1.5% per transaction", "Custodial & connected wallets", "Real-time payment detection"].map(
+              (item) => (
+                <span key={item} className="flex items-center gap-2">
+                  <Icon name="Check" className="h-4 w-4 text-[#a855f7]" />
+                  {item}
+                </span>
+              )
+            )}
+          </div>
         </div>
       </section>
 
@@ -210,7 +197,21 @@ export default function LandingPage() {
 
       <footer className="flex flex-col items-center border-t border-[#1e1e2e] py-10 text-center">
         <LogoMark />
-        <p className="mt-4 text-[13px] text-[#6b7280]">© 2024 Drift Payment. All rights reserved.</p>
+        <nav className="mt-4 flex flex-wrap justify-center gap-4 text-[13px]">
+          <Link href="/terms" className="text-[#9ca3af] hover:text-white">
+            Terms
+          </Link>
+          <Link href="/privacy" className="text-[#9ca3af] hover:text-white">
+            Privacy
+          </Link>
+          <Link href="/developers" className="text-[#9ca3af] hover:text-white">
+            Developers
+          </Link>
+          <a href="mailto:support@driftpayment.io" className="text-[#9ca3af] hover:text-white">
+            Support
+          </a>
+        </nav>
+        <p className="mt-4 text-[13px] text-[#6b7280]">© 2026 Drift Payment. All rights reserved.</p>
       </footer>
     </div>
   );

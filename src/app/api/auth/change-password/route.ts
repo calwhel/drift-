@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, users } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireTwoFactorVerified } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 const schema = z
@@ -23,7 +23,7 @@ const schema = z
 
 export async function POST(req: NextRequest) {
   try {
-    const sessionUser = await requireUser();
+    const sessionUser = await requireTwoFactorVerified();
     const body = await req.json();
     const data = schema.parse(body);
 

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { statsCards, type StatCardData } from "@/lib/mock-data";
+import type { StatCardData } from "@/lib/mock-data";
 import { Icon, type IconName } from "./icons";
 
 const tileClass: Record<StatCardData["color"], string> = {
@@ -41,34 +41,53 @@ function StatCard({ card }: { card: StatCardData }) {
 }
 
 function buildCards(live?: LiveStats | null): StatCardData[] {
-  if (!live) return statsCards;
+  const stats = live ?? {
+    totalGross: 0,
+    totalPayments: 0,
+    completed: 0,
+    pending: 0,
+  };
 
-  return statsCards.map((card) => {
-    const liveSub = "from your account";
-    switch (card.label) {
-      case "Total Gross":
-        return {
-          ...card,
-          value: `$${(live.totalGross ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-          change: "",
-          sub: liveSub,
-        };
-      case "Total Payments":
-        return { ...card, value: String(live.totalPayments ?? 0), change: "", sub: liveSub };
-      case "Completed":
-        return { ...card, value: String(live.completed ?? 0), change: "", sub: liveSub };
-      case "Pending":
-        return {
-          ...card,
-          value: String(live.pending ?? 0),
-          positive: (live.pending ?? 0) <= 14,
-          change: "",
-          sub: liveSub,
-        };
-      default:
-        return card;
-    }
-  });
+  const liveSub = "from your account";
+
+  return [
+    {
+      label: "Total Gross",
+      value: `$${(stats.totalGross ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+      change: "",
+      sub: liveSub,
+      icon: "DollarSign",
+      color: "purple",
+      positive: true,
+    },
+    {
+      label: "Total Payments",
+      value: String(stats.totalPayments ?? 0),
+      change: "",
+      sub: liveSub,
+      icon: "ArrowRightLeft",
+      color: "blue",
+      positive: true,
+    },
+    {
+      label: "Completed",
+      value: String(stats.completed ?? 0),
+      change: "",
+      sub: liveSub,
+      icon: "CheckCircle",
+      color: "green",
+      positive: true,
+    },
+    {
+      label: "Pending",
+      value: String(stats.pending ?? 0),
+      change: "",
+      sub: liveSub,
+      icon: "Clock",
+      color: "orange",
+      positive: (stats.pending ?? 0) <= 14,
+    },
+  ];
 }
 
 export function StatsRow({ live, className }: { live?: LiveStats | null; className?: string }) {

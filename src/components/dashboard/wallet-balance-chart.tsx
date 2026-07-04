@@ -1,7 +1,6 @@
 "use client";
 
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
-import { walletChartData } from "@/lib/mock-data";
 
 export interface BalanceChartPoint {
   day: string;
@@ -16,9 +15,20 @@ export function WalletBalanceChart({
   data?: BalanceChartPoint[];
 }) {
   const chartData: BalanceChartPoint[] =
-    data && data.length > 0
-      ? data.map((d) => ({ day: d.day, balance: d.balance }))
-      : walletChartData;
+    data && data.length > 0 ? data.map((d) => ({ day: d.day, balance: d.balance })) : [];
+
+  if (chartData.length === 0) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center rounded-xl border border-dashed border-drift-border text-center"
+        style={{ height }}
+      >
+        <p className="text-sm font-medium text-white">No balance history</p>
+        <p className="mt-1 text-xs text-drift-muted">Your wallet balance over time will show here.</p>
+      </div>
+    );
+  }
+
   const maxBalance = Math.max(...chartData.map((d) => d.balance), 1);
 
   return (

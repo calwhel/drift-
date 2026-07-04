@@ -9,7 +9,6 @@ import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { getNetworkLabel } from "@/lib/constants";
-import { checkoutFeatures } from "@/lib/mock-data";
 
 interface PaymentLinkData {
   title: string;
@@ -36,7 +35,7 @@ export default function CheckoutPage() {
   const [link, setLink] = useState<PaymentLinkData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState("pending");
-  const [timeLeft, setTimeLeft] = useState(899);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,6 +55,8 @@ export default function CheckoutPage() {
         if (data.expiry) {
           const remaining = Math.max(0, Math.floor((new Date(data.expiry).getTime() - Date.now()) / 1000));
           setTimeLeft(remaining);
+        } else {
+          setTimeLeft(null);
         }
         if (data.status === "paid") setPaymentStatus("completed");
       })
@@ -83,12 +84,18 @@ export default function CheckoutPage() {
     return () => clearInterval(interval);
   }, [link, loadError, paymentStatus, pollStatus]);
 
-  useEffect(() => {
-    const timer = setInterval(() => setTimeLeft((t) => (t > 0 ? t - 1 : 0)), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const hasExpiryTimer = timeLeft !== null;
 
-  const timeDisplay = `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`;
+  useEffect(() => {
+    if (!hasExpiryTimer) return;
+    const timer = setInterval(() => setTimeLeft((t) => (t != null && t > 0 ? t - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [hasExpiryTimer]);
+
+  const timeDisplay =
+    timeLeft != null
+      ? `${String(Math.floor(timeLeft / 60)).padStart(2, "0")}:${String(timeLeft % 60).padStart(2, "0")}`
+      : null;
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -152,18 +159,9 @@ export default function CheckoutPage() {
             </div>
 
             <h1 className="mt-3 text-[22px] font-bold tracking-tight text-white">{link.title}</h1>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-drift-muted">{link.description}</p>
-
-            <ul className="mt-4 space-y-2.5">
-              {checkoutFeatures.map((f) => (
-                <li key={f} className="flex items-center gap-2.5 text-[13px] text-white">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#22c55e1f]">
-                    <Icon name="Check" className="h-3 w-3 text-[#4ade80]" />
-                  </span>
-                  {f}
-                </li>
-              ))}
-            </ul>
+            {link.description ? (
+              <p className="mt-1.5 text-[13px] leading-relaxed text-drift-muted">{link.description}</p>
+            ) : null}
 
             <div className="mt-5 rounded-xl border border-drift-border bg-drift-bg p-4">
               <p className="text-[12px] text-drift-muted">Total Amount</p>
@@ -177,11 +175,18 @@ export default function CheckoutPage() {
           {/* Right payment panel */}
           <div className="p-6">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icon name="Clock" className="h-4 w-4 text-[#a78bfa]" />
-                <span className="text-[12px] text-drift-muted">Time Left to Pay</span>
-                <span className="font-mono text-[15px] font-semibold tabular-nums text-white">{timeDisplay}</span>
-              </div>
+              {timeDisplay != null ? (
+                <div className="flex items-center gap-2">
+                  <Icon name="Clock" className="h-4 w-4 text-[#a78bfa]" />
+                  <span className="text-[12px] text-drift-muted">Time Left to Pay</span>
+                  <span className="font-mono text-[15px] font-semibold tabular-nums text-white">{timeDisplay}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-[12px] text-drift-muted">
+                  <Icon name="Clock" className="h-4 w-4 text-[#a78bfa]" />
+                  No expiry — pay when ready
+                </div>
+              )}
               <div className="flex items-center gap-1.5 text-[12px] text-drift-muted">
                 <Icon name="ShieldCheck" className="h-4 w-4 text-drift-green" />
                 <span className="font-medium text-white">Secure Payment</span>
