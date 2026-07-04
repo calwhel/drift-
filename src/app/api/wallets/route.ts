@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { db, wallets } from "@/lib/db";
+import { authenticateRequest } from "@/lib/api-auth";
 import { requireTwoFactorVerified } from "@/lib/auth";
 import { MERCHANT_WALLET_NETWORKS, type WalletType } from "@/lib/constants";
 import { generateWalletForNetwork, validateWalletAddress } from "@/lib/wallet/generate";
@@ -22,9 +23,13 @@ function isSupportedNetwork(currency: string, network: string) {
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const user = await requireTwoFactorVerified();
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const userWallets = await db
       .select({
         id: wallets.id,
@@ -36,7 +41,7 @@ export async function GET() {
         label: wallets.label,
       })
       .from(wallets)
-      .where(eq(wallets.userId, user.id));
+      .where(eq(wallets.userId, auth.userId));
 
     const withBalances = await fetchOnChainBalancesForWallets(userWallets);
 

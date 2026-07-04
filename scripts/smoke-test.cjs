@@ -99,6 +99,10 @@ async function runChecks() {
         pass(`Env ${key}`, String(val));
         continue;
       }
+      if (key === "cron_secret" && val === "missing") {
+        warn(`Env ${key}`, "missing — cron trigger disabled (in-process poller still runs)");
+        continue;
+      }
       if (val === "set" || val === "default" || val === "in-process (60s)") {
         pass(`Env ${key}`, String(val));
       } else if (val === "missing") {
@@ -153,10 +157,21 @@ async function runChecks() {
   const { res: cronRes } = await fetchWithTimeout("/api/cron/poll-payments");
   if (cronRes.status === 401) {
     pass("Cron endpoint protected", "401 without secret");
-  } else if (cronRes.status === 200) {
-    warn("Cron endpoint protected", "returned 200 — set CRON_SECRET in production");
   } else {
-    warn("Cron endpoint", `status ${cronRes.status}`);
+    fail("Cron endpoint protected", `expected 401 without secret, got ${cronRes.status}`);
+  }
+
+  const { res: telegramRes } = await fetchWithTimeout("/api/telegram/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ update_id: 0 }),
+  });
+  if (telegramRes.status === 401) {
+    pass("Telegram webhook protected", "401 without secret token");
+  } else if (telegramRes.status === 200) {
+    warn("Telegram webhook protected", "returned 200 — bot may not be configured");
+  } else {
+    warn("Telegram webhook", `status ${telegramRes.status}`);
   }
 
   console.log("\n── Protected APIs (expect 401) ──");
@@ -165,6 +180,9 @@ async function runChecks() {
     "/api/payment-links",
     "/api/transactions",
     "/api/dashboard/stats",
+    "/api/webhooks",
+    "/api/api-keys",
+    "/api/withdrawals",
   ];
   for (const path of protectedApis) {
     const { res } = await fetchWithTimeout(path);

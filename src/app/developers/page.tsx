@@ -33,7 +33,7 @@ export default function DevelopersPage() {
 {`curl -X POST https://your-app.railway.app/api/payment-links \\
   -H "Authorization: Bearer drift_your_api_key" \\
   -H "Content-Type: application/json" \\
-  -d '{"title":"Order #1234","amount":99.99,"currency":"USDT"}'`}
+  -d '{"title":"Order #1234","amount":99.99,"currency":"USDT","network":"TRC20"}'`}
           </pre>
         </section>
 
@@ -51,6 +51,7 @@ const link = await drift.paymentLinks.create({
   title: "Order #1234",
   amount: 99.99,
   currency: "USDT",
+  network: "TRC20", // optional if you only have one USDT wallet
 });`}
           </pre>
         </section>
