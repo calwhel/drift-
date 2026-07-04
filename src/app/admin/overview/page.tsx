@@ -11,6 +11,11 @@ interface AdminStats {
   completedTransactions: number;
   platformRevenue: number;
   totalGrossVolume: number;
+  settlementHealth?: {
+    platformFeeCompleted: number;
+    platformFeePending: number;
+    platformFeeFailed: number;
+  };
   recentTransactions: Array<{
     id: string;
     amount: string;
@@ -191,6 +196,46 @@ export default function AdminOverviewPage() {
             </p>
           )}
         </section>
+
+        {stats?.settlementHealth && (
+          <section className="card mt-4 p-4">
+            <h2 className="section-title">Fee settlement health</h2>
+            <p className="mt-1 text-2xs text-drift-muted">
+              On-chain platform fee sweeps (1.5%). Ledger fees are recorded when payments complete; sweeps
+              move USDT to admin platform wallets.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm">
+              <div>
+                <span className="text-drift-muted">Completed sweeps </span>
+                <span className="font-medium text-drift-green">
+                  {stats.settlementHealth.platformFeeCompleted}
+                </span>
+              </div>
+              <div>
+                <span className="text-drift-muted">Pending </span>
+                <span className="font-medium text-amber-400">
+                  {stats.settlementHealth.platformFeePending}
+                </span>
+              </div>
+              <div>
+                <span className="text-drift-muted">Failed </span>
+                <span
+                  className={`font-medium ${
+                    stats.settlementHealth.platformFeeFailed > 0 ? "text-drift-red" : "text-drift-muted"
+                  }`}
+                >
+                  {stats.settlementHealth.platformFeeFailed}
+                </span>
+              </div>
+            </div>
+            {stats.settlementHealth.platformFeeFailed > 0 && (
+              <p className="mt-2 text-2xs text-drift-red">
+                Failed sweeps retry automatically for 24h. Common cause: deposit address needs TRX for gas
+                (auto top-up uses master wallet index 0 — ensure it holds TRX).
+              </p>
+            )}
+          </section>
+        )}
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <section className="card p-4">

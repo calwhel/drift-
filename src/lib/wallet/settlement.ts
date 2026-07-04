@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { eq, or, and, sql } from "drizzle-orm";
 import { db, settlements, wallets } from "../db";
 import { getPlatformFeeAddress } from "../platform-wallets";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
+import { fundTronAddressIfNeeded, getTronSourceAddress } from "./tron-gas";
 import { notifyFeeSettlementFailed, notifyFeeSettlementSuccess } from "../telegram";
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
@@ -98,6 +99,10 @@ export async function queueSettlements(
       fromDerivationIndex: derivationIndex,
       status: "pending",
     });
+  } else if (feeAmount > 0 && !feeWallet) {
+    console.warn(
+      `[settlement] No platform fee wallet for ${currency}/${network} — fee ${feeAmount} recorded in ledger only`
+    );
   }
 }
 
@@ -130,13 +135,54 @@ export async function processPendingSettlements(): Promise<number> {
   const pending = await db
     .select()
     .from(settlements)
-    .where(eq(settlements.status, "pending"));
+    .where(
+      or(
+        eq(settlements.status, "pending"),
+        and(
+          eq(settlements.status, "failed"),
+          eq(settlements.type, "platform_fee"),
+          sql`${settlements.createdAt} > now() - interval '24 hours'`
+        )
+      )
+    )
+    .orderBy(
+      sql`CASE WHEN ${settlements.type} = 'platform_fee' THEN 0 ELSE 1 END`,
+      settlements.createdAt
+    );
 
   let processed = 0;
 
   for (const settlement of pending) {
+    if (settlement.status === "failed") {
+      await db
+        .update(settlements)
+        .set({ status: "pending", error: null })
+        .where(eq(settlements.id, settlement.id));
+    }
+
     try {
       let txHash: string | null = null;
+
+      if (settlement.network === "TRC20" && settlement.currency === "USDT") {
+        let sourceAddress: string | null = null;
+        if (settlement.walletId) {
+          const [wallet] = await db
+            .select({ address: wallets.address })
+            .from(wallets)
+            .where(eq(wallets.id, settlement.walletId))
+            .limit(1);
+          sourceAddress = wallet?.address ?? null;
+        }
+        sourceAddress = getTronSourceAddress(
+          settlement.fromDerivationIndex,
+          settlement.currency,
+          settlement.network,
+          sourceAddress
+        );
+        if (sourceAddress) {
+          await fundTronAddressIfNeeded(sourceAddress);
+        }
+      }
 
       if (settlement.walletId) {
         const [wallet] = await db

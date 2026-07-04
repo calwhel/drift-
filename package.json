@@ -16,7 +16,8 @@
     "db:migrate": "node scripts/migrate-sql.cjs",
     "db:seed-admin": "node scripts/seed-admin.cjs admin@driftpayment.io",
     "db:studio": "drizzle-kit studio",
-    "smoke:test": "node scripts/smoke-test.cjs"
+    "smoke:test": "node scripts/smoke-test.cjs",
+    "fee:audit": "node scripts/fee-audit.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

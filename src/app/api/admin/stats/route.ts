@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, eq, desc } from "drizzle-orm";
-import { db, users, transactions } from "@/lib/db";
+import { db, users, transactions, settlements } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 
 export async function GET() {
@@ -58,6 +58,14 @@ export async function GET() {
     .orderBy(desc(transactions.createdAt))
     .limit(10);
 
+  const [settlementStats] = await db
+    .select({
+      platformFeeCompleted: sql<number>`count(*) filter (where ${settlements.type} = 'platform_fee' and ${settlements.status} = 'completed')`,
+      platformFeePending: sql<number>`count(*) filter (where ${settlements.type} = 'platform_fee' and ${settlements.status} = 'pending')`,
+      platformFeeFailed: sql<number>`count(*) filter (where ${settlements.type} = 'platform_fee' and ${settlements.status} = 'failed')`,
+    })
+    .from(settlements);
+
   const recentUsers = await db
     .select({
       id: users.id,
@@ -76,6 +84,11 @@ export async function GET() {
     completedTransactions: Number(completedCount?.count ?? 0),
     platformRevenue: Number(revenueResult?.total ?? 0),
     totalGrossVolume: Number(grossResult?.total ?? 0),
+    settlementHealth: {
+      platformFeeCompleted: Number(settlementStats?.platformFeeCompleted ?? 0),
+      platformFeePending: Number(settlementStats?.platformFeePending ?? 0),
+      platformFeeFailed: Number(settlementStats?.platformFeeFailed ?? 0),
+    },
     recentTransactions,
     recentUsers,
   });
