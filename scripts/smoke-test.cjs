@@ -103,6 +103,10 @@ async function runChecks() {
         warn(`Env ${key}`, "missing — cron trigger disabled (in-process poller still runs)");
         continue;
       }
+      if (key === "email_provider" && val === "missing") {
+        warn(`Env ${key}`, "missing — password reset emails disabled");
+        continue;
+      }
       if (val === "set" || val === "default" || val === "in-process (60s)") {
         pass(`Env ${key}`, String(val));
       } else if (val === "missing") {
@@ -114,7 +118,7 @@ async function runChecks() {
   }
 
   console.log("\n── Public pages ──");
-  const pages = ["/", "/auth/login", "/auth/signup", "/developers", "/auth/accept-invite", "/terms", "/privacy", "/demo"];
+  const pages = ["/", "/auth/login", "/auth/signup", "/auth/forgot-password", "/developers", "/auth/accept-invite", "/terms", "/privacy", "/demo"];
   for (const path of pages) {
     const { res } = await fetchWithTimeout(path);
     if (res.status === 200) pass(`Page ${path}`, "200");
