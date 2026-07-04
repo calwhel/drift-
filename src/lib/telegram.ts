@@ -28,7 +28,22 @@ export function getTelegramWebhookUrl(): string | null {
 }
 
 export function isTelegramConfigured(): boolean {
-  return Boolean(process.env.TELEGRAM_BOT_TOKEN?.trim() && process.env.TELEGRAM_ADMIN_CHAT_ID?.trim());
+  return Boolean(process.env.TELEGRAM_BOT_TOKEN?.trim() && getTelegramAdminChatId());
+}
+
+export function getTelegramAdminChatId(): string | null {
+  const raw = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim();
+  if (!raw) return null;
+  // Strip accidental quotes from Railway env paste
+  return raw.replace(/^["']|["']$/g, "");
+}
+
+function normalizeTelegramChatId(chatId: string): string | number {
+  const trimmed = chatId.trim();
+  if (/^-?\d+$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  return trimmed;
 }
 
 export function getTelegramConfigStatus() {
@@ -114,16 +129,16 @@ export async function sendTelegramMessageToChat(
 }
 
 export async function sendTelegramNotification(message: string): Promise<TelegramSendResult> {
-  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID?.trim();
+  const chatId = getTelegramAdminChatId();
 
-  if (!isTelegramConfigured()) {
+  if (!isTelegramConfigured() || !chatId) {
     console.warn(
       "[telegram] Notifications disabled — set TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID in Railway env vars"
     );
     return { ok: false, skipped: true, error: "Telegram not configured" };
   }
 
-  return sendTelegramMessageToChat(chatId!, message);
+  return sendTelegramMessageToChat(normalizeTelegramChatId(chatId), message);
 }
 
 export async function getTelegramWebhookInfo(): Promise<{
@@ -216,24 +231,57 @@ export async function sendTelegramTestNotification(): Promise<TelegramSendResult
   );
 }
 
-export function notifyPaymentCompleted(params: {
+export async function notifyPaymentDetected(params: {
+  amount: string | number;
+  currency: string;
+  network: string;
+  merchantName: string;
+  txHash?: string | null;
+  status: string;
+}): Promise<void> {
+  const lines = [
+    "🔔 Payment Detected",
+    "",
+    `Amount: ${params.amount} ${params.currency} (${params.network})`,
+    `Merchant: ${params.merchantName}`,
+    `Status: ${params.status}`,
+  ];
+  if (params.txHash) {
+    lines.push(`Tx: ${params.txHash.slice(0, 16)}…`);
+  }
+  lines.push("", "You'll get a completion alert once confirmations are met and fees are applied.");
+
+  const result = await sendTelegramNotification(lines.join("\n"));
+  if (!result.ok && !result.skipped) {
+    console.error("[telegram] Payment detected notification failed:", result.error);
+  }
+}
+
+export async function notifyPaymentCompleted(params: {
   amount: string | number;
   currency: string;
   network: string;
   merchantName: string;
   feeAmount: string | number;
   netAmount: string | number;
-}): void {
-  void sendTelegramNotification(
-    [
-      "💰 Payment Completed ✅",
-      "",
-      `Amount: ${params.amount} ${params.currency} (${params.network})`,
-      `Merchant: ${params.merchantName}`,
-      `Fee (1.5%): ${params.feeAmount} ${params.currency}`,
-      `Net to merchant: ${params.netAmount} ${params.currency}`,
-    ].join("\n")
-  );
+  txHash?: string | null;
+}): Promise<void> {
+  const lines = [
+    "💰 Payment Completed ✅",
+    "",
+    `Amount: ${params.amount} ${params.currency} (${params.network})`,
+    `Merchant: ${params.merchantName}`,
+    `Fee (1.5%): ${params.feeAmount} ${params.currency}`,
+    `Net to merchant: ${params.netAmount} ${params.currency}`,
+  ];
+  if (params.txHash) {
+    lines.push(`Tx: ${params.txHash}`);
+  }
+
+  const result = await sendTelegramNotification(lines.join("\n"));
+  if (!result.ok && !result.skipped) {
+    console.error("[telegram] Payment completed notification failed:", result.error);
+  }
 }
 
 export function notifyFeeSettlementSuccess(params: {
