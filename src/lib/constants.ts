@@ -34,7 +34,7 @@ export const PLATFORM_WALLET_NETWORKS = [
 
 /** Legacy default network per currency (used when network omitted) */
 export const NETWORKS = {
-  USDT: { network: "TRC20", confirmations: 20, decimals: 6 },
+  USDT: { network: "TRC20", confirmations: 1, decimals: 6 },
   USDC: { network: "ERC20", confirmations: 12, decimals: 6 },
   BTC: { network: "Bitcoin", confirmations: 3, decimals: 8 },
   ETH: { network: "ERC20", confirmations: 12, decimals: 18 },
@@ -46,7 +46,7 @@ export type SupportedCurrency = keyof typeof NETWORKS;
 
 /** Per currency+network configuration */
 export const NETWORK_CONFIG: Record<string, { confirmations: number; decimals: number }> = {
-  "USDT|TRC20": { confirmations: 20, decimals: 6 },
+  "USDT|TRC20": { confirmations: 1, decimals: 6 },
   "USDT|ERC20": { confirmations: 12, decimals: 6 },
   "USDT|SPL": { confirmations: 32, decimals: 6 },
   "USDC|ERC20": { confirmations: 12, decimals: 6 },

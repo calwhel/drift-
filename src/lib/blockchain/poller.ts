@@ -118,6 +118,8 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
   if (!res.ok) return [];
 
   const data = await res.json();
+  const required = getRequiredConfirmations("USDT", "TRC20");
+
   return (data.data ?? [])
     .filter(
       (tx: Record<string, unknown>) =>
@@ -130,7 +132,8 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
       amount: Number(tx.value) / 1e6,
       currency: "USDT",
       network: "TRC20",
-      confirmations: Number(tx.confirmed ?? 0) ? 20 : 1,
+      // TronGrid TRC20 list has block_timestamp but no confirmed field — included in a block = finalized
+      confirmations: tx.block_timestamp ? required : 0,
       depositAddress: address,
     }));
 }
@@ -360,12 +363,54 @@ async function updateConfirmingTransactions() {
 
   for (const tx of confirming) {
     if (!tx.txHash) continue;
+
     const required = getRequiredConfirmations(tx.currency, tx.network);
-    const current = Number(tx.confirmations ?? 0);
+    let current = Number(tx.confirmations ?? 0);
+
+    // Re-check on-chain for stuck TRC20 txs (TronGrid list omits a confirmed flag)
+    if (current < required && tx.network === "TRC20" && tx.currency === "USDT") {
+      const refreshed = await getTronTransferConfirmations(tx.txHash);
+      if (refreshed > current) {
+        current = refreshed;
+        await db
+          .update(transactions)
+          .set({ confirmations: String(current), updatedAt: new Date() })
+          .where(eq(transactions.id, tx.id));
+      }
+    }
+
     if (current >= required) {
       await completeTransaction(tx.id);
     }
   }
+}
+
+async function getTronTransferConfirmations(txHash: string): Promise<number> {
+  const apiKey = process.env.TRONGRID_API_KEY;
+  const res = await fetch(
+    `https://api.trongrid.io/v1/transactions/${txHash}/events?limit=1`,
+    { headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {} }
+  );
+  if (res.ok) {
+    const data = await res.json();
+    const event = data.data?.[0] as { block_timestamp?: number } | undefined;
+    if (event?.block_timestamp) {
+      return getRequiredConfirmations("USDT", "TRC20");
+    }
+  }
+
+  const infoRes = await fetch("https://api.trongrid.io/wallet/gettransactioninfobyid", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "TRON-PRO-API-KEY": apiKey } : {}),
+    },
+    body: JSON.stringify({ value: txHash }),
+  });
+  if (!infoRes.ok) return 0;
+
+  const info = (await infoRes.json()) as { blockNumber?: number; id?: string };
+  return info.blockNumber || info.id ? getRequiredConfirmations("USDT", "TRC20") : 0;
 }
 
 async function processDetectedPayment(payment: DetectedPayment) {
