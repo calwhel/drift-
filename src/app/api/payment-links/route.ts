@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db, paymentLinks, wallets } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
+import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -99,6 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     const shortCode = nanoid(10);
+    const checkout = await resolveCheckoutDeposit(currency, network, wallet);
 
     const [link] = await db
       .insert(paymentLinks)
@@ -112,9 +114,9 @@ export async function POST(req: NextRequest) {
         expiry: data.expiry ? new Date(data.expiry) : null,
         redirectUrl: data.redirect_url,
         shortCode,
-        depositAddress: wallet.address,
-        walletId: wallet.id,
-        derivationIndex: null,
+        depositAddress: checkout.depositAddress,
+        walletId: checkout.walletId,
+        derivationIndex: checkout.derivationIndex,
         status: "active",
       })
       .returning();

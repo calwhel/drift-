@@ -4,8 +4,8 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { db, invoices, invoiceItems, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
-import { deriveDepositAddress, getNextDerivationIndex } from "@/lib/wallet/derive";
 import { getWalletForCurrencyAndNetwork } from "@/lib/wallet/helpers";
+import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
 import { defaultNetworkForCurrency } from "@/lib/constants";
 
 const itemSchema = z.object({
@@ -52,22 +52,11 @@ export async function POST(req: NextRequest) {
       0
     );
 
-    const derivationIndex = await getNextDerivationIndex();
-    let depositAddress: string;
-    let walletId: string | null = null;
-
     const userWallet = await getWalletForCurrencyAndNetwork(auth.userId, currency, network);
-    if (userWallet) {
-      depositAddress = userWallet.address;
-      walletId = userWallet.id;
-    } else {
-      try {
-        depositAddress = deriveDepositAddress(derivationIndex, currency, network);
-      } catch {
-        const { getHoldingAddress } = await import("@/lib/constants");
-        depositAddress = getHoldingAddress(currency, network);
-      }
-    }
+    const checkout = await resolveCheckoutDeposit(currency, network, userWallet);
+    const depositAddress = checkout.depositAddress;
+    const walletId = checkout.walletId;
+    const derivationIndex = checkout.derivationIndex;
     const shortCode = nanoid(10);
 
     const [link] = await db
@@ -81,7 +70,7 @@ export async function POST(req: NextRequest) {
         network,
         shortCode,
         depositAddress,
-        derivationIndex: walletId ? null : derivationIndex,
+        derivationIndex,
         walletId,
         status: "active",
         expiry: data.due_date ? new Date(data.due_date) : null,

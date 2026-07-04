@@ -43,18 +43,33 @@ export async function queueSettlements(
         status: "ledger_settled",
       });
     } else {
-      await db.insert(settlements).values({
-        transactionId,
-        userId,
-        type: "merchant_payout",
-        amount: String(netAmount),
-        currency,
-        network,
-        toAddress: merchantAddress,
-        walletId: sourceWallet?.id ?? null,
-        fromDerivationIndex: derivationIndex,
-        status: "ledger_settled",
-      });
+      if (derivationIndex != null && netAmount > 0) {
+        await db.insert(settlements).values({
+          transactionId,
+          userId,
+          type: "merchant_payout",
+          amount: String(netAmount),
+          currency,
+          network,
+          toAddress: merchantAddress,
+          walletId: sourceWallet?.id ?? null,
+          fromDerivationIndex: derivationIndex,
+          status: "pending",
+        });
+      } else {
+        await db.insert(settlements).values({
+          transactionId,
+          userId,
+          type: "merchant_payout",
+          amount: String(netAmount),
+          currency,
+          network,
+          toAddress: merchantAddress,
+          walletId: sourceWallet?.id ?? null,
+          fromDerivationIndex: derivationIndex,
+          status: "ledger_settled",
+        });
+      }
     }
   }
 
@@ -201,6 +216,32 @@ export async function processPendingSettlements(): Promise<number> {
         settlement.fromDerivationIndex != null
       ) {
         const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "SPL");
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
+      } else if (
+        settlement.network === "Solana" &&
+        settlement.currency === "SOL" &&
+        settlement.fromDerivationIndex != null
+      ) {
+        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "Solana");
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
+      } else if (
+        settlement.network === "Bitcoin" &&
+        settlement.currency === "BTC" &&
+        settlement.fromDerivationIndex != null
+      ) {
+        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "Bitcoin");
         txHash = await broadcastFromPrivateKey(
           privateKey,
           settlement.toAddress,

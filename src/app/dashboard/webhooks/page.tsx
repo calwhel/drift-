@@ -4,11 +4,27 @@ import { useState, useEffect } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Icon } from "@/components/icons";
 
+type WebhookRow = { id: string; url: string; events: string[]; createdAt: string };
+type DeliveryRow = {
+  id: string;
+  webhookId: string;
+  status: string;
+  attempts: string;
+  lastError: string | null;
+  payload: { event?: string };
+  deliveredAt: string | null;
+  lastAttemptAt: string | null;
+  responseStatus: number | null;
+  createdAt: string;
+};
+
 export default function WebhooksPage() {
-  const [hooks, setHooks] = useState<Array<{ id: string; url: string; events: string[]; createdAt: string }>>([]);
+  const [hooks, setHooks] = useState<WebhookRow[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryRow[]>([]);
   const [url, setUrl] = useState("https://your-api.com/webhooks/drift");
   const [secret, setSecret] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = () =>
     fetch("/api/webhooks")
@@ -16,8 +32,15 @@ export default function WebhooksPage() {
       .then(setHooks)
       .catch(() => setHooks([]));
 
+  const loadDeliveries = () =>
+    fetch("/api/webhooks/deliveries?limit=30")
+      .then((r) => (r.ok ? r.json() : { deliveries: [] }))
+      .then((data) => setDeliveries(data.deliveries ?? []))
+      .catch(() => setDeliveries([]));
+
   useEffect(() => {
     load();
+    loadDeliveries();
   }, []);
 
   async function createWebhook() {
@@ -49,6 +72,17 @@ export default function WebhooksPage() {
       return;
     }
     load();
+    loadDeliveries();
+  }
+
+  async function retryDelivery(id: string) {
+    setRetryingId(id);
+    try {
+      const res = await fetch(`/api/webhooks/deliveries/${id}/retry`, { method: "POST" });
+      if (res.ok) loadDeliveries();
+    } finally {
+      setRetryingId(null);
+    }
   }
 
   return (
@@ -100,6 +134,73 @@ export default function WebhooksPage() {
           {hooks.length === 0 && (
             <p className="px-4 py-8 text-center text-sm text-drift-muted">No webhooks configured yet</p>
           )}
+        </div>
+
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Recent deliveries</h2>
+            <button onClick={loadDeliveries} className="text-2xs text-drift-purple hover:underline">
+              Refresh
+            </button>
+          </div>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-left text-2xs">
+              <thead className="border-b border-drift-border text-drift-muted">
+                <tr>
+                  <th className="px-4 py-2">Event</th>
+                  <th className="px-4 py-2">Status</th>
+                  <th className="px-4 py-2">Attempts</th>
+                  <th className="px-4 py-2">Last attempt</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-drift-border">
+                {deliveries.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-4 py-2 text-white">{d.payload?.event ?? "—"}</td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={
+                          d.status === "delivered"
+                            ? "text-drift-green"
+                            : d.status === "failed"
+                              ? "text-drift-red"
+                              : "text-drift-muted"
+                        }
+                      >
+                        {d.status}
+                      </span>
+                      {d.lastError && (
+                        <p className="mt-0.5 max-w-xs truncate text-drift-red" title={d.lastError}>
+                          {d.lastError}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-drift-muted">{d.attempts}</td>
+                    <td className="px-4 py-2 text-drift-muted">
+                      {d.lastAttemptAt
+                        ? new Date(d.lastAttemptAt).toLocaleString()
+                        : new Date(d.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2">
+                      {d.status === "failed" && (
+                        <button
+                          onClick={() => retryDelivery(d.id)}
+                          disabled={retryingId === d.id}
+                          className="text-drift-purple hover:underline disabled:opacity-50"
+                        >
+                          {retryingId === d.id ? "Retrying…" : "Retry"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {deliveries.length === 0 && (
+              <p className="px-4 py-8 text-center text-sm text-drift-muted">No deliveries yet</p>
+            )}
+          </div>
         </div>
       </main>
     </>

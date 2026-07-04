@@ -186,16 +186,17 @@ async function pollBitcoin(address: string): Promise<DetectedPayment[]> {
       ? Math.max(tipHeight - status.block_height + 1, 1)
       : 0;
 
-    for (const o of matching) {
-      results.push({
-        txHash: tx.txid as string,
-        amount: o.value / 1e8,
-        currency: "BTC",
-        network: "Bitcoin",
-        confirmations,
-        depositAddress: address,
-      });
-    }
+    if (matching.length === 0) continue;
+
+    const totalSats = matching.reduce((sum, o) => sum + o.value, 0);
+    results.push({
+      txHash: tx.txid as string,
+      amount: totalSats / 1e8,
+      currency: "BTC",
+      network: "Bitcoin",
+      confirmations,
+      depositAddress: address,
+    });
   }
 
   return results;

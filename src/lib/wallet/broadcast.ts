@@ -89,6 +89,106 @@ async function broadcastSplUsdt(
   return sendAndConfirmTransaction(connection, tx, [fromKeypair]);
 }
 
+async function broadcastSolanaNative(
+  privateKey: string,
+  toAddress: string,
+  amount: number
+): Promise<string> {
+  const { Connection, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } =
+    await import("@solana/web3.js");
+
+  const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+  const connection = new Connection(rpc, "confirmed");
+  const fromKeypair = solanaKeypairFromPrivateKey(privateKey);
+  const toPubkey = new PublicKey(toAddress);
+  const lamports = Math.round(amount * 1e9);
+
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: fromKeypair.publicKey,
+      toPubkey,
+      lamports,
+    })
+  );
+
+  return sendAndConfirmTransaction(connection, tx, [fromKeypair]);
+}
+
+async function broadcastBitcoin(
+  privateKey: string,
+  toAddress: string,
+  amountBtc: number
+): Promise<string> {
+  const bitcoin = await import("bitcoinjs-lib");
+  const { ECPairFactory } = await import("ecpair");
+  const ecc = await import("tiny-secp256k1");
+
+  const ECPair = ECPairFactory(ecc as Parameters<typeof ECPairFactory>[0]);
+  const network = bitcoin.networks.bitcoin;
+  const pkHex = normalizePrivateKey(privateKey);
+  const keyPair = ECPair.fromPrivateKey(Buffer.from(pkHex, "hex"), { network });
+  const fromAddress = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network }).address;
+  if (!fromAddress) throw new Error("Failed to derive Bitcoin address");
+
+  const utxoRes = await fetch(`https://blockstream.info/api/address/${fromAddress}/utxo`);
+  if (!utxoRes.ok) throw new Error("Failed to fetch Bitcoin UTXOs");
+  const utxos = (await utxoRes.json()) as Array<{
+    txid: string;
+    vout: number;
+    value: number;
+  }>;
+  if (utxos.length === 0) throw new Error("No Bitcoin UTXOs available");
+
+  const amountSats = Math.round(amountBtc * 1e8);
+  const feeSats = 2500;
+  let gathered = 0;
+  const inputs: typeof utxos = [];
+
+  for (const utxo of utxos) {
+    inputs.push(utxo);
+    gathered += utxo.value;
+    if (gathered >= amountSats + feeSats) break;
+  }
+
+  if (gathered < amountSats + feeSats) {
+    throw new Error("Insufficient Bitcoin balance for transfer and fees");
+  }
+
+  const psbt = new bitcoin.Psbt({ network });
+
+  for (const utxo of inputs) {
+    const txRes = await fetch(`https://blockstream.info/api/tx/${utxo.txid}/hex`);
+    if (!txRes.ok) throw new Error("Failed to fetch Bitcoin transaction hex");
+    const txHex = await txRes.text();
+    psbt.addInput({
+      hash: utxo.txid,
+      index: utxo.vout,
+      nonWitnessUtxo: Buffer.from(txHex, "hex"),
+    });
+  }
+
+  psbt.addOutput({ address: toAddress, value: BigInt(amountSats) });
+  const change = gathered - amountSats - feeSats;
+  if (change > 546) {
+    psbt.addOutput({ address: fromAddress, value: BigInt(change) });
+  }
+
+  psbt.signAllInputs(keyPair);
+  psbt.finalizeAllInputs();
+  const rawTx = psbt.extractTransaction().toHex();
+
+  const broadcastRes = await fetch("https://blockstream.info/api/tx", {
+    method: "POST",
+    body: rawTx,
+  });
+  if (!broadcastRes.ok) {
+    const errText = await broadcastRes.text();
+    throw new Error(errText || "Bitcoin broadcast failed");
+  }
+
+  return broadcastRes.text();
+}
+
 export async function broadcastFromPrivateKey(
   privateKey: string,
   toAddress: string,
@@ -102,6 +202,14 @@ export async function broadcastFromPrivateKey(
 
   if (network === "SPL" && currency === "USDT") {
     return broadcastSplUsdt(privateKey, toAddress, amount);
+  }
+
+  if (network === "Solana" && currency === "SOL") {
+    return broadcastSolanaNative(privateKey, toAddress, amount);
+  }
+
+  if (network === "Bitcoin" && currency === "BTC") {
+    return broadcastBitcoin(privateKey, toAddress, amount);
   }
 
   if (network === "ERC20" && process.env.ETH_RPC_URL) {

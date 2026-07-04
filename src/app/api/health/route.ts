@@ -24,6 +24,7 @@ export async function GET() {
     trongrid_api_key: process.env.TRONGRID_API_KEY ? "set" : "missing",
     solana_rpc_url: process.env.SOLANA_RPC_URL ? "set" : "default",
     cron_secret: process.env.CRON_SECRET ? "set" : "missing",
+    email_provider: process.env.RESEND_API_KEY ? "set" : "missing",
     payment_poller: "in-process (60s)",
   };
 

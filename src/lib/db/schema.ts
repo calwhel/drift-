@@ -63,6 +63,17 @@ export const teamInvitations = pgTable("team_invitations", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const derivationCounter = pgTable("derivation_counter", {
   id: integer("id").primaryKey().default(1),
   nextIndex: integer("next_index").notNull().default(1),
@@ -260,6 +271,11 @@ export const webhookDeliveries = pgTable("webhook_deliveries", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   attempts: numeric("attempts", { precision: 3, scale: 0 }).notNull().default("0"),
   lastError: text("last_error"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
