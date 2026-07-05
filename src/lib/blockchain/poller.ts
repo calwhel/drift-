@@ -5,6 +5,12 @@ import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../const
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
 import { notifyPaymentCompleted, notifyPaymentDetected } from "../telegram";
+import {
+  fetchBlockstreamAddressTxIds,
+  fetchBlockstreamTipHeight,
+  fetchBlockstreamTx,
+  logBlockstreamError,
+} from "./blockstream";
 
 interface DetectedPayment {
   txHash: string;
@@ -175,45 +181,58 @@ async function pollEvm(
 }
 
 async function pollBitcoin(address: string): Promise<DetectedPayment[]> {
-  const res = await fetch(`https://blockstream.info/api/address/${address}/txs`);
-  if (!res.ok) return [];
-  const txs = await res.json();
-  const tipHeight = await getBitcoinBlockHeight();
-  const results: DetectedPayment[] = [];
+  try {
+    const txids = await fetchBlockstreamAddressTxIds(address);
+    const tipHeight = await getBitcoinBlockHeight();
+    const results: DetectedPayment[] = [];
 
-  for (const tx of (txs ?? []).slice(0, 10)) {
-    const vout = tx.vout as Array<{ scriptpubkey_address: string; value: number }>;
-    const status = tx.status as { confirmed: boolean; block_height?: number };
-    const matching = vout?.filter((o) => o.scriptpubkey_address === address) ?? [];
-    const confirmations = status.confirmed && status.block_height
-      ? Math.max(tipHeight - status.block_height + 1, 1)
-      : 0;
+    for (const txid of txids.slice(0, 10)) {
+      try {
+        const tx = await fetchBlockstreamTx(txid);
+        const matching =
+          tx.vout?.filter((o) => o.scriptpubkey_address === address) ?? [];
+        const confirmations =
+          tx.status.confirmed && tx.status.block_height
+            ? Math.max(tipHeight - tx.status.block_height + 1, 1)
+            : 0;
 
-    if (matching.length === 0) continue;
+        if (matching.length === 0) continue;
 
-    const totalSats = matching.reduce((sum, o) => sum + o.value, 0);
-    results.push({
-      txHash: tx.txid as string,
-      amount: totalSats / 1e8,
-      currency: "BTC",
-      network: "Bitcoin",
-      confirmations,
-      depositAddress: address,
-    });
+        const totalSats = matching.reduce((sum, o) => sum + o.value, 0);
+        results.push({
+          txHash: tx.txid,
+          amount: totalSats / 1e8,
+          currency: "BTC",
+          network: "Bitcoin",
+          confirmations,
+          depositAddress: address,
+        });
+      } catch (err) {
+        logBlockstreamError(`tx ${txid}`, err);
+      }
+    }
+
+    return results;
+  } catch (err) {
+    logBlockstreamError(`poll ${address}`, err);
+    return [];
   }
-
-  return results;
 }
 
 let cachedBtcHeight = 0;
 let btcHeightAt = 0;
 async function getBitcoinBlockHeight(): Promise<number> {
-  if (Date.now() - btcHeightAt < 60_000 && cachedBtcHeight) return cachedBtcHeight;
-  const res = await fetch("https://blockstream.info/api/blocks/tip/height");
-  if (res.ok) {
-    cachedBtcHeight = Number(await res.text());
-    btcHeightAt = Date.now();
+  if (Date.now() - btcHeightAt < 60_000 && cachedBtcHeight) {
+    return cachedBtcHeight;
   }
+
+  try {
+    cachedBtcHeight = await fetchBlockstreamTipHeight();
+    btcHeightAt = Date.now();
+  } catch (err) {
+    logBlockstreamError("block height", err);
+  }
+
   return cachedBtcHeight || 800000;
 }
 
@@ -342,6 +361,8 @@ export async function pollAllNetworks() {
     try {
       detected.push(...(await pollAddress(target)));
     } catch (err) {
+      // Bitcoin errors are handled inside pollBitcoin with rate-limited logging
+      if (target.network === "Bitcoin") continue;
       console.error(`Poll error ${target.network}/${target.currency} for ${target.address}:`, err);
     }
   }

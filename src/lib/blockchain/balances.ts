@@ -1,4 +1,5 @@
 import { getDecimals, TOKEN_CONTRACTS } from "../constants";
+import { blockstreamFetch, logBlockstreamError } from "./blockstream";
 
 export interface OnChainWalletBalance {
   amount: number | null;
@@ -237,7 +238,7 @@ async function fetchSolanaNativeBalance(address: string): Promise<OnChainWalletB
 
 async function fetchBitcoinBalance(address: string): Promise<OnChainWalletBalance> {
   try {
-    const res = await fetch(`https://blockstream.info/api/address/${address}`);
+    const res = await blockstreamFetch(`/address/${encodeURIComponent(address)}`);
     if (!res.ok) throw new Error(`Blockstream HTTP ${res.status}`);
     const data = (await res.json()) as {
       chain_stats?: { funded_txo_sum?: number; spent_txo_sum?: number };
@@ -255,6 +256,7 @@ async function fetchBitcoinBalance(address: string): Promise<OnChainWalletBalanc
       nativeGas: null,
     };
   } catch (err) {
+    logBlockstreamError(`balance ${address}`, err);
     return {
       amount: null,
       currency: "BTC",
