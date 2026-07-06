@@ -17,7 +17,8 @@
     "db:seed-admin": "node scripts/seed-admin.cjs admin@driftpayment.io",
     "db:studio": "drizzle-kit studio",
     "smoke:test": "node scripts/smoke-test.cjs",
-    "fee:audit": "node scripts/fee-audit.cjs"
+    "fee:audit": "node scripts/fee-audit.cjs",
+    "wallet:mnemonic": "node scripts/generate-mnemonic.cjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
