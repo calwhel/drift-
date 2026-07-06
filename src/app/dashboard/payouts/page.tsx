@@ -13,6 +13,7 @@ interface Withdrawal {
   network: string;
   toAddress: string;
   status: string;
+  error?: string | null;
   createdAt: string;
 }
 
@@ -51,7 +52,12 @@ export default function PayoutsPage() {
       .then((d) => {
         const rows = (d.wallets ?? []).filter((w: WalletOption) => w.walletType === "generated");
         setWallets(rows);
-        if (rows.length > 0) setWalletId(rows[0].id);
+        const withBalance = rows.filter((w: WalletOption) => Number(w.balance) > 0);
+        const preferred =
+          withBalance.find((w: WalletOption) => w.currency === "USDT" && w.network === "TRC20") ??
+          withBalance[0] ??
+          rows[0];
+        if (preferred) setWalletId(preferred.id);
       })
       .catch(() => {});
   }, []);
@@ -182,6 +188,9 @@ export default function PayoutsPage() {
                     <td className="max-w-[120px] truncate px-4 py-2.5 font-mono text-2xs">{w.toAddress}</td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={statusMap[w.status] ?? "Pending"} />
+                      {w.status === "failed" && w.error ? (
+                        <p className="mt-1 max-w-[200px] text-[10px] text-drift-red">{w.error}</p>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2.5 text-drift-muted">
                       {new Date(w.createdAt).toLocaleString()}

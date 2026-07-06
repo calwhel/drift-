@@ -11,6 +11,7 @@ import {
   fetchBlockstreamTx,
   logBlockstreamError,
 } from "./blockstream";
+import { buildEtherscanV2Url } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
 
 interface DetectedPayment {
@@ -93,16 +94,10 @@ async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
     if (!process.env.ETHERSCAN_API_KEY) {
       return [];
     }
-    return pollEvm(address, currency, network, "https://api.etherscan.io/api", process.env.ETHERSCAN_API_KEY);
+    return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY);
   }
   if (network === "BEP20" && process.env.BSCSCAN_API_KEY) {
-    return pollEvm(
-      address,
-      currency,
-      network,
-      "https://api.bscscan.com/api",
-      process.env.BSCSCAN_API_KEY
-    );
+    return pollEvm(address, currency, network, process.env.BSCSCAN_API_KEY, 56);
   }
   if (network === "Bitcoin") {
     return pollBitcoin(address);
@@ -150,15 +145,20 @@ async function pollEvm(
   address: string,
   currency: string,
   network: string,
-  apiUrl: string,
-  apiKey: string
+  apiKey: string,
+  chainId = 1
 ): Promise<DetectedPayment[]> {
   const contracts = TOKEN_CONTRACTS[network as keyof typeof TOKEN_CONTRACTS];
   const contract = contracts?.[currency];
 
-  const res = await fetch(
-    `${apiUrl}?module=account&action=tokentx&address=${address}&sort=desc&apikey=${apiKey}`
-  );
+  const url = buildEtherscanV2Url(apiKey, {
+    module: "account",
+    action: "tokentx",
+    address,
+    sort: "desc",
+  }, chainId);
+
+  const res = await fetch(url);
   if (!res.ok) return [];
   const data = await res.json();
   if (data.status !== "1") return [];

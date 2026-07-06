@@ -1,5 +1,6 @@
 import { getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { blockstreamFetch, logBlockstreamError } from "./blockstream";
+import { etherscanV2Fetch, parseEtherscanV2Json } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
 
 export interface OnChainWalletBalance {
@@ -71,37 +72,34 @@ async function fetchEvmTokenBalance(
   address: string,
   currency: string,
   network: string,
-  apiUrl: string,
   apiKey: string,
   contract: string
 ): Promise<number> {
-  const res = await fetch(
-    `${apiUrl}?module=account&action=tokenbalance&contractaddress=${contract}&address=${address}&tag=latest&apikey=${apiKey}`
-  );
-  if (!res.ok) throw new Error(`Explorer HTTP ${res.status}`);
-  const data = (await res.json()) as { status?: string; result?: string; message?: string };
-  if (data.status !== "1") {
-    throw new Error(data.message ?? "Token balance lookup failed");
-  }
+  const res = await etherscanV2Fetch(apiKey, {
+    module: "account",
+    action: "tokenbalance",
+    contractaddress: contract,
+    address,
+    tag: "latest",
+  });
+  const result = await parseEtherscanV2Json<string>(res);
   const decimals = getDecimals(currency, network);
-  return Number(data.result ?? 0) / Math.pow(10, decimals);
+  return Number(result ?? 0) / Math.pow(10, decimals);
 }
 
 async function fetchEvmNativeBalance(
   address: string,
-  apiUrl: string,
   apiKey: string,
   decimals: number
 ): Promise<number> {
-  const res = await fetch(
-    `${apiUrl}?module=account&action=balance&address=${address}&tag=latest&apikey=${apiKey}`
-  );
-  if (!res.ok) throw new Error(`Explorer HTTP ${res.status}`);
-  const data = (await res.json()) as { status?: string; result?: string; message?: string };
-  if (data.status !== "1") {
-    throw new Error(data.message ?? "Native balance lookup failed");
-  }
-  return Number(data.result ?? 0) / Math.pow(10, decimals);
+  const res = await etherscanV2Fetch(apiKey, {
+    module: "account",
+    action: "balance",
+    address,
+    tag: "latest",
+  });
+  const result = await parseEtherscanV2Json<string>(res);
+  return Number(result ?? 0) / Math.pow(10, decimals);
 }
 
 async function fetchErc20Balance(address: string, currency: string): Promise<OnChainWalletBalance> {
@@ -117,10 +115,8 @@ async function fetchErc20Balance(address: string, currency: string): Promise<OnC
   }
 
   try {
-    const apiUrl = "https://api.etherscan.io/api";
-
     if (currency === "ETH") {
-      const amount = await fetchEvmNativeBalance(address, apiUrl, apiKey, 18);
+      const amount = await fetchEvmNativeBalance(address, apiKey, 18);
       return {
         amount,
         currency: "ETH",
@@ -140,10 +136,10 @@ async function fetchErc20Balance(address: string, currency: string): Promise<OnC
       };
     }
 
-    const amount = await fetchEvmTokenBalance(address, currency, "ERC20", apiUrl, apiKey, contract);
+    const amount = await fetchEvmTokenBalance(address, currency, "ERC20", apiKey, contract);
     let ethGas: number | null = null;
     try {
-      ethGas = await fetchEvmNativeBalance(address, apiUrl, apiKey, 18);
+      ethGas = await fetchEvmNativeBalance(address, apiKey, 18);
     } catch {
       ethGas = null;
     }
@@ -291,6 +287,16 @@ export async function fetchOnChainBalance(
       network,
       nativeGas: null,
       error: "Address is empty",
+    };
+  }
+
+  if (!validateWalletAddress(trimmed, network)) {
+    return {
+      amount: null,
+      currency,
+      network,
+      nativeGas: null,
+      error: `Invalid ${network} address — delete and recreate this wallet`,
     };
   }
 

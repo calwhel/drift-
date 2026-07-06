@@ -31,6 +31,9 @@ export async function queueSettlements(
 
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
     if (isGenerated) {
+      const sweepNetOnChain =
+        network === "TRC20" && currency === "USDT" && derivationIndex != null && netAmount > 0;
+
       await db.insert(settlements).values({
         transactionId,
         userId,
@@ -41,7 +44,7 @@ export async function queueSettlements(
         toAddress: merchantAddress,
         walletId: sourceWallet!.id,
         fromDerivationIndex: derivationIndex,
-        status: "ledger_settled",
+        status: sweepNetOnChain ? "pending" : "ledger_settled",
       });
     } else {
       if (derivationIndex != null && netAmount > 0) {
