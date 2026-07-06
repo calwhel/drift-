@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTelegramConfigStatus } from "@/lib/telegram";
 import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
+import { getTronGasWalletStatus } from "@/lib/wallet/gas-wallet";
 
 async function tableExists(name: string): Promise<boolean> {
   try {
@@ -60,6 +61,13 @@ export async function GET() {
       body.missing = missing;
       body.error = `Database tables missing: ${missing.join(", ")}`;
       return NextResponse.json(body, { status: 200 });
+    }
+
+    try {
+      const gas = await getTronGasWalletStatus();
+      checks.tron_gas_wallet = gas.ready ? "ready" : gas.configured ? "needs_trx" : "not_configured";
+    } catch {
+      checks.tron_gas_wallet = "unknown";
     }
 
     return NextResponse.json({

@@ -19,11 +19,24 @@ interface PlatformWallet {
   nativeGasSymbol?: string | null;
 }
 
+interface GasWalletStatus {
+  configured: boolean;
+  address: string | null;
+  trxBalance: number;
+  accountExists: boolean;
+  ready: boolean;
+  message: string;
+  minTrxRequired: number;
+  explorerUrl: string | null;
+}
+
 export default function AdminWalletsPage() {
   const { setOpen } = useAdminSidebar();
   const [wallets, setWallets] = useState<PlatformWallet[]>([]);
+  const [gasWallet, setGasWallet] = useState<GasWalletStatus | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [copiedGas, setCopiedGas] = useState(false);
   const [form, setForm] = useState({
     currency: "USDT",
     network: "TRC20",
@@ -35,15 +48,26 @@ export default function AdminWalletsPage() {
 
   const load = (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
-    fetch("/api/admin/platform-wallets")
-      .then(async (r) => {
+    Promise.all([
+      fetch("/api/admin/platform-wallets").then(async (r) => {
         if (!r.ok) {
           const data = await r.json();
           throw new Error(data.error ?? "Failed to load wallets");
         }
         return r.json();
+      }),
+      fetch("/api/admin/gas-wallet").then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json();
+          throw new Error(data.error ?? "Failed to load gas wallet");
+        }
+        return r.json();
+      }),
+    ])
+      .then(([platformData, gasData]) => {
+        setWallets(platformData.data ?? []);
+        setGasWallet(gasData);
       })
-      .then((d) => setWallets(d.data ?? []))
       .catch((err) => setError(err.message))
       .finally(() => setRefreshing(false));
   };
@@ -128,10 +152,83 @@ export default function AdminWalletsPage() {
         )}
 
         <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          These are <strong>fee collection</strong> addresses — where Drift sweeps the 1.5% platform fee.
-          Sending test payments here will <strong>not</strong> update merchant balances. To test payments,
-          create a Drift custodial wallet under Dashboard → Wallets, then send USDT to that address
-          (or create a payment link for a specific amount).
+          <strong>Fee wallets</strong> collect the 1.5% platform USDT. The <strong>gas wallet</strong> holds
+          TRX only — it pays network fees to move USDT during fee sweeps. Fund the gas wallet with TRX (not USDT).
+        </p>
+
+        {gasWallet && (
+          <section
+            className={`card mb-4 p-4 ${
+              gasWallet.ready
+                ? "border-drift-green/40"
+                : gasWallet.configured
+                  ? "border-amber-500/40"
+                  : "border-drift-red/40"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h2 className="section-title">Tron Gas Wallet (TRX)</h2>
+                <p className="mt-1 text-2xs text-drift-muted">{gasWallet.message}</p>
+                {gasWallet.address ? (
+                  <>
+                    <p className="mt-3 break-all font-mono text-xs text-white">{gasWallet.address}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-2xs">
+                      <span className="text-white">
+                        Balance:{" "}
+                        <span
+                          className={
+                            gasWallet.ready ? "font-semibold text-drift-green" : "font-semibold text-amber-400"
+                          }
+                        >
+                          {gasWallet.trxBalance.toFixed(2)} TRX
+                        </span>
+                      </span>
+                      <span className="text-drift-muted">
+                        Need {gasWallet.minTrxRequired}+ TRX for fee sweeps
+                      </span>
+                      {gasWallet.explorerUrl && (
+                        <a
+                          href={gasWallet.explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-drift-purple hover:underline"
+                        >
+                          View on Tronscan →
+                        </a>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                {gasWallet.address && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(gasWallet.address!);
+                      setCopiedGas(true);
+                      setTimeout(() => setCopiedGas(false), 2000);
+                    }}
+                    className="btn-secondary px-3 py-2 text-2xs"
+                  >
+                    {copiedGas ? "Copied!" : "Copy address"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {!gasWallet.ready && gasWallet.configured && gasWallet.address && (
+              <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                Send <strong>{gasWallet.minTrxRequired} TRX</strong> (Tron network coin) to the address above
+                from any exchange or wallet. This is a one-time setup — Drift uses it to pay gas on fee sweeps.
+              </p>
+            )}
+          </section>
+        )}
+
+        <p className="mb-4 rounded border border-drift-border bg-drift-bg/50 px-3 py-2 text-sm text-drift-muted">
+          <strong className="text-white">Platform fee wallets</strong> — where Drift sweeps the 1.5% USDT fee.
+          Test payments sent here will not update merchant balances.
         </p>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -1,6 +1,11 @@
-import { deriveDepositAddress, derivePrivateKey } from "./derive";
+import {
+  assertTronGasWalletReady,
+  getTronGasWalletPrivateKey,
+  MIN_DEPOSIT_TRX,
+} from "./gas-wallet";
+import { deriveDepositAddress } from "./derive";
 
-const MIN_TRX_SUN = 15_000_000; // 15 TRX — enough for several TRC20 transfers
+const MIN_TRX_SUN = MIN_DEPOSIT_TRX * 1_000_000;
 
 async function getTronTrxBalanceSun(address: string): Promise<number> {
   const apiKey = process.env.TRONGRID_API_KEY;
@@ -35,14 +40,15 @@ async function sendTronTrx(fromPrivateKey: string, toAddress: string, amountTrx:
   return String(result);
 }
 
-/** Top up a deposit address with TRX so TRC20 token transfers can pay energy/bandwidth. */
+/** Top up a deposit address with TRX from the admin gas wallet */
 export async function fundTronAddressIfNeeded(toAddress: string): Promise<void> {
+  await assertTronGasWalletReady();
+
   const balance = await getTronTrxBalanceSun(toAddress);
   if (balance >= MIN_TRX_SUN) return;
 
-  const topUpTrx = (MIN_TRX_SUN - balance) / 1e6 + 2; // +2 TRX buffer
-  const gasIndex = Number(process.env.TRON_GAS_DERIVATION_INDEX ?? 0);
-  const gasKey = derivePrivateKey(gasIndex, "TRC20");
+  const topUpTrx = (MIN_TRX_SUN - balance) / 1e6 + 2;
+  const gasKey = getTronGasWalletPrivateKey();
 
   await sendTronTrx(gasKey, toAddress, topUpTrx);
 }
@@ -53,9 +59,9 @@ export function getTronSourceAddress(
   network: string,
   walletAddress?: string | null
 ): string | null {
-  if (walletAddress) return walletAddress;
   if (fromDerivationIndex != null) {
     return deriveDepositAddress(fromDerivationIndex, currency, network);
   }
+  if (walletAddress) return walletAddress;
   return null;
 }
