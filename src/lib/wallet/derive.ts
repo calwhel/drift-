@@ -7,6 +7,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { eq, sql } from "drizzle-orm";
 import { db, derivationCounter } from "../db";
 import { defaultNetworkForCurrency } from "../constants";
+import { getMasterWalletMnemonic } from "./master-wallet";
 
 const DERIVATION_PATHS: Record<string, (index: number) => string> = {
   ERC20: (i) => `m/44'/60'/0'/0/${i}`,
@@ -18,7 +19,7 @@ const DERIVATION_PATHS: Record<string, (index: number) => string> = {
 };
 
 function getMasterKey(): HDKey {
-  const mnemonic = process.env.MASTER_WALLET_MNEMONIC;
+  const mnemonic = getMasterWalletMnemonic();
   if (!mnemonic) {
     throw new Error("MASTER_WALLET_MNEMONIC is not configured");
   }

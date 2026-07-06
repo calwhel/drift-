@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTelegramConfigStatus } from "@/lib/telegram";
+import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
 
 async function tableExists(name: string): Promise<boolean> {
   try {
@@ -25,6 +26,7 @@ export async function GET() {
     solana_rpc_url: process.env.SOLANA_RPC_URL ? "set" : "default",
     cron_secret: process.env.CRON_SECRET ? "set" : "missing",
     email_provider: process.env.RESEND_API_KEY ? "set" : "missing",
+    master_wallet_mnemonic: isMasterWalletConfigured() ? "set" : "missing",
     payment_poller: "in-process (60s)",
   };
 

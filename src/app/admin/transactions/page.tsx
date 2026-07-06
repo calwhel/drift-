@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { useAdminSidebar } from "@/components/admin/sidebar-context";
 
@@ -24,8 +24,9 @@ export default function AdminTransactionsPage() {
   const [transactions, setTransactions] = useState<TxRow[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
+  const [actionId, setActionId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     fetch("/api/admin/transactions?limit=50")
       .then(async (r) => {
         if (!r.ok) {
@@ -40,6 +41,27 @@ export default function AdminTransactionsPage() {
       })
       .catch((err) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const runAction = async (id: string, action: "cancel" | "complete") => {
+    setActionId(id);
+    setError("");
+    const res = await fetch(`/api/admin/transactions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Action failed");
+      return;
+    }
+    load();
+  };
 
   return (
     <>
@@ -56,6 +78,11 @@ export default function AdminTransactionsPage() {
           </p>
         )}
 
+        <p className="mb-4 text-xs text-drift-muted">
+          Funds are never deleted from the blockchain — they sit at the deposit address until credited to the merchant
+          ledger on completion. Cancel false underpaid rows; complete verified payments that were stuck.
+        </p>
+
         <div className="card overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -65,7 +92,9 @@ export default function AdminTransactionsPage() {
                 <th className="px-4 py-3 font-medium">Fee (1.5%)</th>
                 <th className="px-4 py-3 font-medium">Network</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Tx hash</th>
                 <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -89,14 +118,43 @@ export default function AdminTransactionsPage() {
                           ? "text-drift-green"
                           : tx.status === "failed"
                             ? "text-drift-red"
-                            : "text-drift-muted"
+                            : tx.status === "underpaid"
+                              ? "text-amber-400"
+                              : "text-drift-muted"
                       }
                     >
                       {tx.status}
                     </span>
                   </td>
+                  <td className="max-w-[120px] truncate px-4 py-3 font-mono text-[10px] text-drift-muted">
+                    {tx.txHash ?? "—"}
+                  </td>
                   <td className="px-4 py-3 text-drift-muted">
                     {new Date(tx.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(tx.status === "underpaid" ||
+                      tx.status === "overpaid" ||
+                      tx.status === "confirming") && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={actionId === tx.id}
+                          onClick={() => runAction(tx.id, "cancel")}
+                          className="rounded border border-drift-border px-2 py-1 text-[10px] text-drift-muted hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={actionId === tx.id}
+                          onClick={() => runAction(tx.id, "complete")}
+                          className="rounded border border-drift-green/40 px-2 py-1 text-[10px] text-drift-green hover:bg-drift-green/10"
+                        >
+                          Complete
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

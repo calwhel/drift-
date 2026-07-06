@@ -137,7 +137,13 @@ export default function PaymentLinksPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(data.error ?? "Failed to create link");
+      const errText =
+        typeof data.error === "string"
+          ? data.error
+          : Array.isArray(data.error)
+            ? data.error.map((e: { message?: string }) => e.message ?? String(e)).join(", ")
+            : "Failed to create link";
+      setError(errText);
       return;
     }
 

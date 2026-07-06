@@ -6,6 +6,12 @@ import { db, paymentLinks, wallets } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
+import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
+
+function formatApiError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return "Failed to create payment link";
+}
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -127,14 +133,17 @@ export async function POST(req: NextRequest) {
       {
         ...link,
         checkout_url: `/pay/${link.shortCode}`,
+        deposit_mode: isMasterWalletConfigured() ? "unique_derived" : "custodial_shared",
       },
       { status: 201 }
     );
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
+      return NextResponse.json({ error: err.issues.map((i) => i.message).join(", ") }, { status: 400 });
     }
-    console.error(err);
-    return NextResponse.json({ error: "Failed to create payment link" }, { status: 500 });
+    const message = formatApiError(err);
+    console.error("[payment-links] create failed:", message, err);
+    const status = message.includes("MASTER_WALLET_MNEMONIC") ? 503 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

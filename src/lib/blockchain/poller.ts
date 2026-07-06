@@ -623,7 +623,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
   }
 }
 
-async function completeTransaction(transactionId: string) {
+export async function completeTransaction(transactionId: string) {
   const [tx] = await db
     .select()
     .from(transactions)
