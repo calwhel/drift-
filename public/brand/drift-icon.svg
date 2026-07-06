@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Drift">
+  <defs>
+    <linearGradient id="drift-icon-grad" x1="14" y1="8" x2="50" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e9d5ff" />
+      <stop offset="0.35" stop-color="#c084fc" />
+      <stop offset="0.7" stop-color="#a855f7" />
+      <stop offset="1" stop-color="#6d28d9" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M10 14h18c10.5 0 18 7.5 18 18s-7.5 18-18 18H14V38l-4-12V14zm8 8v20h10c6.6 0 11-4.4 11-10s-4.4-10-11-10H18z"
+    fill="url(#drift-icon-grad)"
+  />
+  <path
+    d="M42 12 58 18v28l-16 6V12zm4 10 8 3v8l-8 3v-14z"
+    fill="url(#drift-icon-grad)"
+  />
+  <path d="M18 28h16v4H18v-4zm0 8h14v4H18v-4z" fill="#0a0a0f" opacity="0.85" />
+</svg>

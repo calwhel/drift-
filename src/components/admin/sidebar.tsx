@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Logo } from "../logo";
+import { LogoMarkCompact } from "../landing/logo-mark";
 import { Icon, type IconName } from "../icons";
 
 const adminNavItems = [
@@ -40,7 +40,7 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
         )}
       >
         <div className="flex h-11 items-center justify-between border-b border-drift-border px-3">
-          <Logo size="sm" showSubtitle={false} />
+          <LogoMarkCompact href="/admin/overview" />
           <button onClick={onClose} className="text-drift-muted lg:hidden">
             <Icon name="X" className="h-3.5 w-3.5" />
           </button>
