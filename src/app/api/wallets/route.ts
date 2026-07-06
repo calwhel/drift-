@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
 
     const enrichedWallets = withBalances.map(({ onChain, ...wallet }) => ({
       ...wallet,
+      addressValid: validateWalletAddress(wallet.address, wallet.network),
       onChainBalance: onChain.amount,
       onChainError: onChain.error,
       nativeGasBalance: onChain.nativeGas?.amount ?? null,
@@ -137,6 +138,12 @@ export async function POST(req: NextRequest) {
     }
 
     const generated = generateWalletForNetwork(currency, network);
+    if (!validateWalletAddress(generated.address, network)) {
+      return NextResponse.json(
+        { error: `Failed to generate a valid ${network} address. Please try again.` },
+        { status: 500 }
+      );
+    }
 
     const [wallet] = await db
       .insert(wallets)

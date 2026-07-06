@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import { db, withdrawals, wallets } from "../db";
+import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
+import { fundTronAddressIfNeeded } from "./tron-gas";
 
 async function refundWithdrawalBalance(withdrawal: {
   walletId: string | null;
@@ -71,17 +73,33 @@ export async function processPendingWithdrawals(): Promise<number> {
         continue;
       }
 
+      const amount = Number(withdrawal.amount);
+
+      if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
+        await fundTronAddressIfNeeded(wallet.address);
+
+        const onChain = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
+        const available = onChain.amount ?? 0;
+
+        if (available + 0.000001 < amount) {
+          throw new Error(
+            `Insufficient on-chain USDT in wallet (have ${available.toFixed(4)}, need ${amount.toFixed(4)}). ` +
+              "Funds may still be sweeping from payment links — wait a few minutes and retry."
+          );
+        }
+      }
+
       const txHash = await broadcastFromPrivateKey(
         privateKey,
         withdrawal.toAddress,
-        Number(withdrawal.amount),
+        amount,
         withdrawal.currency,
         withdrawal.network
       );
 
       await db
         .update(withdrawals)
-        .set({ status: "completed", txHash, completedAt: new Date() })
+        .set({ status: "completed", txHash, completedAt: new Date(), error: null })
         .where(eq(withdrawals.id, withdrawal.id));
       processed++;
     } catch (err) {

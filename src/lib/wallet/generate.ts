@@ -1,6 +1,5 @@
 import { Wallet, keccak256, getBytes, computeAddress } from "ethers";
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { HDKey } from "@scure/bip32";
 import bs58 from "bs58";
 import { sha256 } from "@noble/hashes/sha2.js";
 import * as bitcoin from "bitcoinjs-lib";
@@ -18,13 +17,18 @@ function tronAddressFromPrivateKey(privateKeyHex: string): string {
 
 function bitcoinAddressFromPrivateKey(privateKeyHex: string): string {
   const hex = privateKeyHex.startsWith("0x") ? privateKeyHex.slice(2) : privateKeyHex;
-  const key = HDKey.fromMasterSeed(Buffer.from(hex, "hex"));
-  const pubkey = key.publicKey!;
-  const hash = sha256(pubkey);
-  const version = 0x00;
-  const payload = Buffer.concat([Buffer.from([version]), Buffer.from(hash)]);
-  const checksum = sha256(sha256(payload)).slice(0, 4);
-  return bs58.encode(Buffer.concat([payload, Buffer.from(checksum)]));
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ecc = require("tiny-secp256k1");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ECPairFactory } = require("ecpair");
+  const ECPair = ECPairFactory(ecc);
+  const keyPair = ECPair.fromPrivateKey(Buffer.from(hex, "hex"), { network: bitcoin.networks.bitcoin });
+  const payment = bitcoin.payments.p2pkh({
+    pubkey: keyPair.publicKey,
+    network: bitcoin.networks.bitcoin,
+  });
+  if (!payment.address) throw new Error("Failed to derive Bitcoin address");
+  return payment.address;
 }
 
 export interface GeneratedWallet {
