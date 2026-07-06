@@ -8,6 +8,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const metadata: Metadata = {
   title: "Drift Payment — Modern Crypto Payments for Businesses",
   description: "Accept crypto payments and grow globally with Drift Payment.",
+  icons: {
+    icon: "/brand/drift-icon.svg",
+    apple: "/brand/drift-icon.svg",
+  },
 };
 
 export default function RootLayout({
