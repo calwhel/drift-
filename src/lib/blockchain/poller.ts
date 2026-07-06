@@ -11,6 +11,7 @@ import {
   fetchBlockstreamTx,
   logBlockstreamError,
 } from "./blockstream";
+import { validateWalletAddress } from "../wallet/generate";
 
 interface DetectedPayment {
   txHash: string;
@@ -182,6 +183,10 @@ async function pollEvm(
 }
 
 async function pollBitcoin(address: string): Promise<DetectedPayment[]> {
+  if (!validateWalletAddress(address, "Bitcoin")) {
+    return [];
+  }
+
   try {
     const txids = await fetchBlockstreamAddressTxIds(address);
     const tipHeight = await getBitcoinBlockHeight();

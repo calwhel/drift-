@@ -1,5 +1,6 @@
 import { getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { blockstreamFetch, logBlockstreamError } from "./blockstream";
+import { validateWalletAddress } from "../wallet/generate";
 
 export interface OnChainWalletBalance {
   amount: number | null;
@@ -237,6 +238,16 @@ async function fetchSolanaNativeBalance(address: string): Promise<OnChainWalletB
 }
 
 async function fetchBitcoinBalance(address: string): Promise<OnChainWalletBalance> {
+  if (!validateWalletAddress(address, "Bitcoin")) {
+    return {
+      amount: null,
+      currency: "BTC",
+      network: "Bitcoin",
+      nativeGas: null,
+      error: "Invalid Bitcoin address",
+    };
+  }
+
   try {
     const res = await blockstreamFetch(`/address/${encodeURIComponent(address)}`);
     if (!res.ok) throw new Error(`Blockstream HTTP ${res.status}`);
