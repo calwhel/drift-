@@ -13,6 +13,8 @@ interface DashboardStats {
   totalPayments: number;
   completed: number;
   pending: number;
+  underpaid?: number;
+  overpaid?: number;
   revenueChart?: Array<{ date: string; revenue: string | number }>;
   paymentMethods?: Record<string, number>;
 }
@@ -52,7 +54,7 @@ export default function AnalyticsPage() {
         ) : (
           <div className="space-y-6">
             <StatsRow live={live} />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="card p-4">
                 <p className="text-2xs text-drift-muted">Platform fees paid</p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
@@ -71,6 +73,17 @@ export default function AnalyticsPage() {
                     : "—"}
                 </p>
               </div>
+              {(stats?.underpaid ?? 0) > 0 || (stats?.overpaid ?? 0) > 0 ? (
+                <div className="card p-4">
+                  <p className="text-2xs text-drift-muted">Amount mismatches</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    {(stats?.underpaid ?? 0) + (stats?.overpaid ?? 0)}
+                  </p>
+                  <p className="mt-1 text-2xs text-drift-muted">
+                    {stats?.underpaid ?? 0} underpaid · {stats?.overpaid ?? 0} overpaid
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="card-elevated p-4">
