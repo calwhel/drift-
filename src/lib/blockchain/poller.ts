@@ -19,6 +19,7 @@ interface DetectedPayment {
   network: string;
   confirmations: number;
   depositAddress: string;
+  blockTimestamp?: number;
 }
 
 interface PollTarget {
@@ -138,9 +139,9 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
       amount: Number(tx.value) / 1e6,
       currency: "USDT",
       network: "TRC20",
-      // TronGrid TRC20 list has block_timestamp but no confirmed field — included in a block = finalized
       confirmations: tx.block_timestamp ? required : 0,
       depositAddress: address,
+      blockTimestamp: tx.block_timestamp ? Number(tx.block_timestamp) : undefined,
     }));
 }
 
@@ -443,6 +444,62 @@ async function getMerchantName(userId: string): Promise<string> {
   return merchant?.businessName ?? "Unknown";
 }
 
+function paymentOccurredBeforeLink(
+  payment: DetectedPayment,
+  linkCreatedAt: Date
+): boolean {
+  if (!payment.blockTimestamp) return false;
+  return payment.blockTimestamp < linkCreatedAt.getTime();
+}
+
+function amountMatchesLink(paymentAmount: number, expectedAmount: number): boolean {
+  const tolerance = expectedAmount * 0.01;
+  return paymentAmount >= expectedAmount - tolerance && paymentAmount <= expectedAmount + tolerance;
+}
+
+function classifyPaymentStatus(
+  paymentAmount: number,
+  expectedAmount: number
+): "confirming" | "underpaid" | "overpaid" {
+  const tolerance = expectedAmount * 0.01;
+  if (paymentAmount > 0 && paymentAmount < expectedAmount - tolerance) return "underpaid";
+  if (paymentAmount > expectedAmount + tolerance) return "overpaid";
+  return "confirming";
+}
+
+/** Match an on-chain payment to the correct active payment link (amount + time aware). */
+async function findMatchingPaymentLink(payment: DetectedPayment) {
+  const links = await db
+    .select()
+    .from(paymentLinks)
+    .where(
+      and(
+        eq(paymentLinks.depositAddress, payment.depositAddress),
+        eq(paymentLinks.currency, payment.currency),
+        eq(paymentLinks.network, payment.network),
+        eq(paymentLinks.status, "active")
+      )
+    )
+    .orderBy(desc(paymentLinks.createdAt));
+
+  const now = new Date();
+  const eligible = links.filter((link) => {
+    if (link.expiry && link.expiry < now) return false;
+    if (paymentOccurredBeforeLink(payment, link.createdAt)) return false;
+    return true;
+  });
+
+  if (eligible.length === 0) return null;
+
+  const exactMatch = eligible.find((link) =>
+    amountMatchesLink(payment.amount, Number(link.amount))
+  );
+  if (exactMatch) return exactMatch;
+
+  // Do not attach unrelated amounts to the newest link (prevents false underpaid)
+  return null;
+}
+
 async function processDetectedPayment(payment: DetectedPayment) {
   if (!payment.txHash) return;
 
@@ -469,33 +526,11 @@ async function processDetectedPayment(payment: DetectedPayment) {
     return;
   }
 
-  const [link] = await db
-    .select()
-    .from(paymentLinks)
-    .where(
-      and(
-        eq(paymentLinks.depositAddress, payment.depositAddress),
-        eq(paymentLinks.currency, payment.currency),
-        eq(paymentLinks.network, payment.network),
-        eq(paymentLinks.status, "active")
-      )
-    )
-    .orderBy(desc(paymentLinks.createdAt))
-    .limit(1);
+  const link = await findMatchingPaymentLink(payment);
 
   if (link) {
-    if (link.expiry && link.expiry < new Date()) return;
-
     const expectedAmount = Number(link.amount);
-    const tolerance = expectedAmount * 0.01;
-    let status = "confirming";
-
-    if (payment.amount > 0 && payment.amount < expectedAmount - tolerance) {
-      status = "underpaid";
-    } else if (payment.amount > expectedAmount + tolerance) {
-      status = "overpaid";
-    }
-
+    const status = classifyPaymentStatus(payment.amount, expectedAmount);
     const amount = payment.amount || expectedAmount;
     const { feeAmount, netAmount } = calculateFee(amount);
 

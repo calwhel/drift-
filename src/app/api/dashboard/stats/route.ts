@@ -14,6 +14,8 @@ export async function GET() {
 
     const completed = all.filter((t) => t.status === "completed");
     const pending = all.filter((t) => t.status === "pending" || t.status === "confirming");
+    const underpaid = all.filter((t) => t.status === "underpaid");
+    const overpaid = all.filter((t) => t.status === "overpaid");
 
     const totalGross = completed.reduce((s, t) => s + Number(t.amount), 0);
     const totalFees = completed.reduce((s, t) => s + Number(t.feeAmount ?? 0), 0);
@@ -50,6 +52,8 @@ export async function GET() {
       totalPayments: all.length,
       completed: completed.length,
       pending: pending.length,
+      underpaid: underpaid.length,
+      overpaid: overpaid.length,
       revenueChart: recent,
       paymentMethods: byCurrency,
       recentTransactions: all.slice(0, 10),
