@@ -230,8 +230,11 @@ export default function AdminOverviewPage() {
             </div>
             {stats.settlementHealth.platformFeeFailed > 0 && (
               <p className="mt-2 text-2xs text-drift-red">
-                Failed sweeps retry automatically for 24h. Common cause: deposit address needs TRX for gas
-                (auto top-up uses master wallet index 0 — ensure it holds TRX).
+                Failed sweeps retry automatically for 24h. Fund the{" "}
+                <Link href="/admin/wallets" className="text-drift-purple hover:underline">
+                  Tron gas wallet
+                </Link>{" "}
+                with 20+ TRX — it pays network fees for fee sweeps.
               </p>
             )}
           </section>

@@ -294,6 +294,18 @@ export const platformWallets = pgTable(
   (t) => [uniqueIndex("platform_wallet_currency_network").on(t.currency, t.network)]
 );
 
+/** TRX source wallet for topping up deposit addresses before TRC20 sweeps */
+export const gasWallets = pgTable("gas_wallets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  network: varchar("network", { length: 50 }).notNull().unique(),
+  currency: varchar("currency", { length: 20 }).notNull().default("TRX"),
+  address: text("address").notNull(),
+  derivationIndex: integer("derivation_index").notNull().default(0),
+  label: varchar("label", { length: 100 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
@@ -316,3 +328,4 @@ export type Withdrawal = typeof withdrawals.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type PlatformWallet = typeof platformWallets.$inferSelect;
+export type GasWallet = typeof gasWallets.$inferSelect;

@@ -164,27 +164,39 @@ export async function processPendingSettlements(): Promise<number> {
       let txHash: string | null = null;
 
       if (settlement.network === "TRC20" && settlement.currency === "USDT") {
-        let sourceAddress: string | null = null;
-        if (settlement.walletId) {
-          const [wallet] = await db
-            .select({ address: wallets.address })
-            .from(wallets)
-            .where(eq(wallets.id, settlement.walletId))
-            .limit(1);
-          sourceAddress = wallet?.address ?? null;
-        }
-        sourceAddress = getTronSourceAddress(
+        const sourceAddress = getTronSourceAddress(
           settlement.fromDerivationIndex,
           settlement.currency,
           settlement.network,
-          sourceAddress
+          settlement.walletId
+            ? (
+                await db
+                  .select({ address: wallets.address })
+                  .from(wallets)
+                  .where(eq(wallets.id, settlement.walletId))
+                  .limit(1)
+              )[0]?.address
+            : null
         );
         if (sourceAddress) {
           await fundTronAddressIfNeeded(sourceAddress);
         }
       }
 
-      if (settlement.walletId) {
+      if (
+        settlement.network === "TRC20" &&
+        settlement.currency === "USDT" &&
+        settlement.fromDerivationIndex != null
+      ) {
+        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "TRC20");
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          settlement.toAddress,
+          Number(settlement.amount),
+          settlement.currency,
+          settlement.network
+        );
+      } else if (settlement.walletId) {
         const [wallet] = await db
           .select()
           .from(wallets)
@@ -242,19 +254,6 @@ export async function processPendingSettlements(): Promise<number> {
           process.env.ETH_RPC_URL,
           USDT_ERC20,
           6
-        );
-      } else if (
-        settlement.network === "TRC20" &&
-        settlement.currency === "USDT" &&
-        settlement.fromDerivationIndex != null
-      ) {
-        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "TRC20");
-        txHash = await broadcastFromPrivateKey(
-          privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
         );
       } else if (
         settlement.network === "SPL" &&
