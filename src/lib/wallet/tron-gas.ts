@@ -1,22 +1,14 @@
 import {
-  assertTronGasWalletReady,
+  assertTronGasWalletCanSend,
+  fetchTronTrxBalance,
   getTronGasWalletPrivateKey,
-  MIN_DEPOSIT_TRX,
+  getTronGasWalletRecord,
+  isTronAccountActivated,
+  TRX_TOP_UP_TARGET,
 } from "./gas-wallet";
 import { deriveDepositAddress } from "./derive";
 
-const MIN_TRX_SUN = MIN_DEPOSIT_TRX * 1_000_000;
-
-async function getTronTrxBalanceSun(address: string): Promise<number> {
-  const apiKey = process.env.TRONGRID_API_KEY;
-  const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`, {
-    headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
-  });
-  if (!res.ok) return 0;
-
-  const data = (await res.json()) as { data?: Array<{ balance?: number }> };
-  return data.data?.[0]?.balance ?? 0;
-}
+const ACTIVATION_TRX = 1.1;
 
 async function sendTronTrx(fromPrivateKey: string, toAddress: string, amountTrx: number): Promise<string> {
   const { TronWeb } = await import("tronweb");
@@ -40,17 +32,35 @@ async function sendTronTrx(fromPrivateKey: string, toAddress: string, amountTrx:
   return String(result);
 }
 
-/** Top up a deposit address with TRX from the admin gas wallet */
+/**
+ * Send the minimum TRX needed for one TRC20 transfer on a deposit address.
+ * Avoids sending 15+ TRX per address (previous behaviour drained the gas wallet).
+ */
 export async function fundTronAddressIfNeeded(toAddress: string): Promise<void> {
-  await assertTronGasWalletReady();
+  const gasRecord = await getTronGasWalletRecord();
+  if (gasRecord?.address && toAddress === gasRecord.address) {
+    return;
+  }
 
-  const balance = await getTronTrxBalanceSun(toAddress);
-  if (balance >= MIN_TRX_SUN) return;
+  const balanceTrx = await fetchTronTrxBalance(toAddress);
+  if (balanceTrx >= TRX_TOP_UP_TARGET) return;
 
-  const topUpTrx = (MIN_TRX_SUN - balance) / 1e6 + 2;
+  const activated = balanceTrx > 0 || (await isTronAccountActivated(toAddress));
+  let sendTrx = Math.max(TRX_TOP_UP_TARGET - balanceTrx, 0);
+
+  if (!activated && sendTrx < ACTIVATION_TRX) {
+    sendTrx = ACTIVATION_TRX;
+  }
+
+  // Cap single top-up — one TRC20 transfer does not need more than ~8 TRX
+  sendTrx = Math.min(Math.max(sendTrx, 0.5), 8);
+
+  if (sendTrx < 0.5) return;
+
+  await assertTronGasWalletCanSend(sendTrx);
+
   const gasKey = getTronGasWalletPrivateKey();
-
-  await sendTronTrx(gasKey, toAddress, topUpTrx);
+  await sendTronTrx(gasKey, toAddress, sendTrx);
 }
 
 export function getTronSourceAddress(

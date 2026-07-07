@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import {
   getTronGasWalletStatus,
-  MIN_GAS_TRX,
+  MIN_GAS_TRX_WARNING,
   provisionTronGasWallet,
 } from "@/lib/wallet/gas-wallet";
 
@@ -20,7 +20,7 @@ export async function GET() {
     const status = await getTronGasWalletStatus();
     return NextResponse.json({
       ...status,
-      minTrxRequired: MIN_GAS_TRX,
+      minTrxRequired: MIN_GAS_TRX_WARNING,
       explorerUrl: status.address
         ? `https://tronscan.org/#/address/${status.address}`
         : null,
@@ -38,7 +38,7 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       ...status,
-      minTrxRequired: MIN_GAS_TRX,
+      minTrxRequired: MIN_GAS_TRX_WARNING,
       explorerUrl: status.address
         ? `https://tronscan.org/#/address/${status.address}`
         : null,

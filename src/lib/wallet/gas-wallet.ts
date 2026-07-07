@@ -4,8 +4,15 @@ import { deriveDepositAddress, derivePrivateKey } from "./derive";
 import { isMasterWalletConfigured } from "./master-wallet";
 
 export const TRON_GAS_NETWORK = "TRC20";
-export const MIN_GAS_TRX = 20;
-export const MIN_DEPOSIT_TRX = 15;
+
+/** Target TRX on a deposit address before one TRC20 transfer (~5–8 TRX typical burn) */
+export const TRX_TOP_UP_TARGET = 6;
+
+/** Admin UI: recommend topping up gas wallet below this */
+export const MIN_GAS_TRX_WARNING = 15;
+
+/** Minimum TRX in gas wallet to send one funding transaction */
+export const MIN_GAS_TRX_OPERATION = 2;
 
 export interface TronGasWalletStatus {
   configured: boolean;
@@ -17,7 +24,7 @@ export interface TronGasWalletStatus {
   message: string;
 }
 
-async function fetchTronTrxBalanceSun(address: string): Promise<number> {
+export async function fetchTronTrxBalanceSun(address: string): Promise<number> {
   const apiKey = process.env.TRONGRID_API_KEY;
   const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`, {
     headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
@@ -26,6 +33,10 @@ async function fetchTronTrxBalanceSun(address: string): Promise<number> {
 
   const data = (await res.json()) as { data?: Array<{ balance?: number }> };
   return data.data?.[0]?.balance ?? 0;
+}
+
+export async function fetchTronTrxBalance(address: string): Promise<number> {
+  return (await fetchTronTrxBalanceSun(address)) / 1e6;
 }
 
 export async function isTronAccountActivated(address: string): Promise<boolean> {
@@ -120,17 +131,17 @@ export async function getTronGasWalletStatus(): Promise<TronGasWalletStatus> {
     record = await provisionTronGasWallet();
   }
 
-  const trxBalance = (await fetchTronTrxBalanceSun(record.address)) / 1e6;
+  const trxBalance = await fetchTronTrxBalance(record.address);
   const accountExists = await isTronAccountActivated(record.address);
-  const ready = accountExists && trxBalance >= MIN_GAS_TRX;
+  const ready = accountExists && trxBalance >= MIN_GAS_TRX_WARNING;
 
   let message: string;
   if (!accountExists) {
-    message = `Send at least ${MIN_GAS_TRX} TRX to activate this gas wallet.`;
-  } else if (trxBalance < MIN_GAS_TRX) {
-    message = `Gas wallet is active but low on TRX. Send ${MIN_GAS_TRX}+ TRX to fund fee sweeps.`;
+    message = `Send at least ${MIN_GAS_TRX_WARNING} TRX to activate this gas wallet.`;
+  } else if (trxBalance < MIN_GAS_TRX_WARNING) {
+    message = `Gas wallet is active but low on TRX (${trxBalance.toFixed(2)} TRX). Send more TRX to keep sweeps and withdrawals running.`;
   } else {
-    message = "Gas wallet is ready for TRC20 fee sweeps.";
+    message = "Gas wallet is ready for TRC20 transfers.";
   }
 
   return {
@@ -144,22 +155,24 @@ export async function getTronGasWalletStatus(): Promise<TronGasWalletStatus> {
   };
 }
 
-export async function assertTronGasWalletReady(): Promise<void> {
+/** Ensure gas wallet can fund a single TRX send (does not require 20+ TRX reserve). */
+export async function assertTronGasWalletCanSend(amountTrx: number): Promise<string> {
   const status = await getTronGasWalletStatus();
-  if (!status.configured) {
-    throw new Error(status.message);
-  }
-  if (!status.address) {
-    throw new Error("Tron gas wallet address is not provisioned");
+  if (!status.configured || !status.address) {
+    throw new Error(status.message || "Tron gas wallet is not configured");
   }
   if (!status.accountExists) {
     throw new Error(
-      `Tron gas wallet ${status.address} is not activated. Send ${MIN_GAS_TRX}+ TRX to this address in Admin → Gas Wallet.`
+      `Tron gas wallet ${status.address} is not activated. Send TRX to this address in Admin → Platform Wallets.`
     );
   }
-  if (status.trxBalance < MIN_GAS_TRX) {
+
+  const required = amountTrx + MIN_GAS_TRX_OPERATION;
+  if (status.trxBalance < required) {
     throw new Error(
-      `Tron gas wallet needs more TRX (has ${status.trxBalance.toFixed(2)}, need ${MIN_GAS_TRX}+). Send TRX to ${status.address}.`
+      `Tron gas wallet needs more TRX (has ${status.trxBalance.toFixed(2)}, need ~${required.toFixed(1)} for this transfer). Send TRX to ${status.address}.`
     );
   }
+
+  return status.address;
 }

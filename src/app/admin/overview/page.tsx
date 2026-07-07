@@ -234,7 +234,7 @@ export default function AdminOverviewPage() {
                 <Link href="/admin/wallets" className="text-drift-purple hover:underline">
                   Tron gas wallet
                 </Link>{" "}
-                with 20+ TRX — it pays network fees for fee sweeps.
+                with more TRX — it pays network fees for fee sweeps and withdrawals.
               </p>
             )}
           </section>
