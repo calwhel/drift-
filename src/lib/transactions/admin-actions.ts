@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets } from "@/lib/db";
 import { completeTransaction } from "@/lib/blockchain/poller";
+import { fetchOnChainBalance } from "@/lib/blockchain/balances";
 import { TOKEN_CONTRACTS } from "@/lib/constants";
+import { isEvmUsdtNetwork } from "@/lib/evm/chains";
 
 const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
 
@@ -79,7 +81,7 @@ export async function reconcileMerchantDeposits(userId: string) {
   const addresses = new Map<string, { label: string; currency: string; network: string }>();
 
   for (const wallet of userWallets) {
-    if (wallet.currency === "USDT" && wallet.network === "TRC20") {
+    if (wallet.currency === "USDT") {
       addresses.set(wallet.address, {
         label: `Wallet ${wallet.label ?? wallet.currency}`,
         currency: wallet.currency,
@@ -89,7 +91,7 @@ export async function reconcileMerchantDeposits(userId: string) {
   }
 
   for (const link of links) {
-    if (link.currency === "USDT" && link.network === "TRC20" && link.depositAddress) {
+    if (link.currency === "USDT" && link.depositAddress) {
       addresses.set(link.depositAddress, {
         label: `Link: ${link.title}`,
         currency: link.currency,
@@ -100,15 +102,25 @@ export async function reconcileMerchantDeposits(userId: string) {
 
   const results = [];
   for (const [address, meta] of Array.from(addresses.entries())) {
-    const transfers = await fetchTrc20UsdtTransfers(address);
+    let transfers: OnChainTransfer[] = [];
+    let onChainBalance = 0;
+
+    if (meta.network === "TRC20") {
+      transfers = await fetchTrc20UsdtTransfers(address);
+      onChainBalance = transfers.reduce((sum, t) => sum + t.amount, 0);
+    } else if (meta.network === "SPL" || isEvmUsdtNetwork(meta.network)) {
+      const balance = await fetchOnChainBalance(address, "USDT", meta.network);
+      onChainBalance = balance.amount ?? 0;
+    }
+
     const unmatched = transfers.filter((t) => !knownHashes.has(t.txHash));
-    const totalOnChain = transfers.reduce((sum, t) => sum + t.amount, 0);
 
     results.push({
       address,
       ...meta,
       recentTransferCount: transfers.length,
-      totalRecentInflow: totalOnChain,
+      totalRecentInflow: onChainBalance,
+      onChainBalance,
       unmatchedTransfers: unmatched,
     });
   }

@@ -4,6 +4,19 @@ import { db } from "@/lib/db";
 import { getTelegramConfigStatus } from "@/lib/telegram";
 import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
 import { getTronGasWalletStatus } from "@/lib/wallet/gas-wallet";
+import { getSplGasWalletStatus } from "@/lib/wallet/spl-gas";
+import { getAllEvmGasWalletStatuses } from "@/lib/evm/gas";
+
+const CRITICAL_TABLES = [
+  "users",
+  "wallets",
+  "payment_links",
+  "transactions",
+  "withdrawals",
+  "settlements",
+  "derivation_counter",
+  "gas_wallets",
+];
 
 async function tableExists(name: string): Promise<boolean> {
   try {
@@ -12,6 +25,10 @@ async function tableExists(name: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function unhealthy(body: Record<string, unknown>) {
+  return NextResponse.json(body, { status: 503 });
 }
 
 export async function GET() {
@@ -39,28 +56,27 @@ export async function GET() {
 
   if (!process.env.DATABASE_URL) {
     body.error = "DATABASE_URL is not configured";
-    return NextResponse.json(body, { status: 200 });
+    return unhealthy(body);
   }
 
   if (!process.env.NEXTAUTH_SECRET) {
     body.error = "NEXTAUTH_SECRET is not configured";
-    return NextResponse.json(body, { status: 200 });
+    return unhealthy(body);
   }
 
   try {
     await db.execute(sql`SELECT 1`);
 
-    const usersOk = await tableExists("users");
-    const walletsOk = await tableExists("wallets");
-
     const missing: string[] = [];
-    if (!usersOk) missing.push("users");
-    if (!walletsOk) missing.push("wallets");
+    for (const table of CRITICAL_TABLES) {
+      const exists = await tableExists(table);
+      if (!exists) missing.push(table);
+    }
 
     if (missing.length > 0) {
       body.missing = missing;
       body.error = `Database tables missing: ${missing.join(", ")}`;
-      return NextResponse.json(body, { status: 200 });
+      return unhealthy(body);
     }
 
     try {
@@ -68,6 +84,38 @@ export async function GET() {
       checks.tron_gas_wallet = gas.ready ? "ready" : gas.configured ? "needs_trx" : "not_configured";
     } catch {
       checks.tron_gas_wallet = "unknown";
+    }
+
+    try {
+      const splGas = await getSplGasWalletStatus();
+      checks.solana_gas_wallet = splGas.ready ? "ready" : splGas.configured ? "needs_sol" : "not_configured";
+    } catch {
+      checks.solana_gas_wallet = "unknown";
+    }
+
+    try {
+      const evmGas = await getAllEvmGasWalletStatuses();
+      body.evm_gas_wallets = evmGas.map((g) => ({
+        network: g.network,
+        ready: g.ready,
+        nativeSymbol: g.nativeSymbol,
+        nativeBalance: g.nativeBalance,
+        address: g.address,
+      }));
+      const evmReady = evmGas.every((g) => g.ready);
+      checks.evm_gas_wallets = evmReady ? "ready" : "needs_funding";
+    } catch {
+      checks.evm_gas_wallets = "unknown";
+    }
+
+    if (!isMasterWalletConfigured()) {
+      body.warning = "MASTER_WALLET_MNEMONIC not set — unique deposit addresses disabled";
+    }
+
+    if (!process.env.ETHERSCAN_API_KEY) {
+      body.warning =
+        (body.warning ? `${body.warning}; ` : "") +
+        "ETHERSCAN_API_KEY missing — EVM USDT payments will not be detected";
     }
 
     return NextResponse.json({
@@ -78,6 +126,6 @@ export async function GET() {
     });
   } catch (err) {
     body.error = err instanceof Error ? err.message : "Database connection failed";
-    return NextResponse.json(body, { status: 200 });
+    return unhealthy(body);
   }
 }

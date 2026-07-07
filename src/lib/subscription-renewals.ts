@@ -1,6 +1,7 @@
 import { eq, and, lte, isNotNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { db, subscriptions, paymentLinks } from "./db";
+import { db, subscriptions, paymentLinks, wallets } from "./db";
+import { resolveCheckoutDeposit } from "./wallet/checkout-deposit";
 
 function addInterval(date: Date, interval: string): Date {
   const next = new Date(date);
@@ -49,6 +50,18 @@ export async function processSubscriptionRenewals(): Promise<number> {
         .where(eq(paymentLinks.id, oldLink.id));
     }
 
+    let wallet = null;
+    if (oldLink.walletId) {
+      const [w] = await db
+        .select()
+        .from(wallets)
+        .where(eq(wallets.id, oldLink.walletId))
+        .limit(1);
+      wallet = w ?? null;
+    }
+
+    const deposit = await resolveCheckoutDeposit(oldLink.currency, oldLink.network, wallet);
+
     const [newLink] = await db
       .insert(paymentLinks)
       .values({
@@ -59,9 +72,9 @@ export async function processSubscriptionRenewals(): Promise<number> {
         currency: oldLink.currency,
         network: oldLink.network,
         shortCode,
-        depositAddress: oldLink.depositAddress,
-        walletId: oldLink.walletId,
-        derivationIndex: oldLink.derivationIndex,
+        depositAddress: deposit.depositAddress,
+        walletId: deposit.walletId,
+        derivationIndex: deposit.derivationIndex,
         status: "active",
         expiry: periodEnd,
       })
