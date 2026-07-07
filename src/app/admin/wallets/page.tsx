@@ -219,8 +219,9 @@ export default function AdminWalletsPage() {
             </div>
             {!gasWallet.ready && gasWallet.configured && gasWallet.address && (
               <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                Send <strong>{gasWallet.minTrxRequired} TRX</strong> (Tron network coin) to the address above
-                from any exchange or wallet. This is a one-time setup — Drift uses it to pay gas on fee sweeps.
+                Send <strong>{gasWallet.minTrxRequired}+ TRX</strong> (Tron network coin) to the address above
+                from any exchange or wallet. Drift uses ~6 TRX per transfer to fund deposit addresses — keep
+                50+ TRX on hand if you have active payments.
               </p>
             )}
           </section>
