@@ -15,9 +15,13 @@ const RANGES = ["7D", "30D", "90D", "1Y"];
 const networkBadge: Record<string, string> = {
   TRC20: "bg-[#7c3aed29] text-[#c4b5fd]",
   ERC20: "bg-[#3b82f629] text-[#93c5fd]",
+  BEP20: "bg-[#eab30829] text-[#fde047]",
+  Polygon: "bg-[#8b5cf629] text-[#c4b5fd]",
+  Arbitrum: "bg-[#3b82f629] text-[#93c5fd]",
+  Base: "bg-[#2563eb29] text-[#93c5fd]",
+  Avalanche: "bg-[#ef444429] text-[#fca5a5]",
   SPL: "bg-[#14b8a629] text-[#5eead4]",
   Bitcoin: "bg-[#f59e0b29] text-[#fbbf24]",
-  BEP20: "bg-[#eab30829] text-[#fde047]",
   Solana: "bg-[#14b8a629] text-[#5eead4]",
 };
 

@@ -1,5 +1,6 @@
 import { decryptPrivateKey } from "./encryption";
 import { TOKEN_CONTRACTS } from "../constants";
+import { getEvmChain, isEvmUsdtNetwork, getEvmRpcUrl } from "../evm/chains";
 
 const USDT_ERC20 = TOKEN_CONTRACTS.ERC20.USDT;
 const USDC_ERC20 = TOKEN_CONTRACTS.ERC20.USDC;
@@ -189,6 +190,32 @@ async function broadcastBitcoin(
   return broadcastRes.text();
 }
 
+async function broadcastEvmUsdt(
+  privateKey: string,
+  toAddress: string,
+  amount: number,
+  network: string
+): Promise<string> {
+  const chain = getEvmChain(network);
+  if (!chain) throw new Error(`Unsupported EVM network: ${network}`);
+
+  const { Wallet, Contract, JsonRpcProvider, parseUnits } = await import("ethers");
+  const provider = new JsonRpcProvider(getEvmRpcUrl(chain));
+  const pk = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
+  const signer = new Wallet(pk, provider);
+  const token = new Contract(
+    chain.usdtContract,
+    ["function transfer(address to, uint256 amount) returns (bool)"],
+    signer
+  );
+  const tx = await token.transfer(
+    toAddress,
+    parseUnits(amount.toFixed(chain.usdtDecimals), chain.usdtDecimals)
+  );
+  const receipt = await tx.wait();
+  return receipt.hash as string;
+}
+
 export async function broadcastFromPrivateKey(
   privateKey: string,
   toAddress: string,
@@ -210,6 +237,10 @@ export async function broadcastFromPrivateKey(
 
   if (network === "Bitcoin" && currency === "BTC") {
     return broadcastBitcoin(privateKey, toAddress, amount);
+  }
+
+  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+    return broadcastEvmUsdt(privateKey, toAddress, amount, network);
   }
 
   if (network === "ERC20" && process.env.ETH_RPC_URL) {

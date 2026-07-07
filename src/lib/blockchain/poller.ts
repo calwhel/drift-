@@ -13,6 +13,7 @@ import {
 } from "./blockstream";
 import { buildEtherscanV2Url } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
+import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 
 interface DetectedPayment {
   txHash: string;
@@ -40,7 +41,7 @@ function addressesMatch(stored: string, observed: string, network: string): bool
   const a = stored.trim();
   const b = observed.trim();
   if (a === b) return true;
-  if (network === "ERC20" || network === "BEP20") {
+  if (network === "ERC20" || network === "BEP20" || isEvmUsdtNetwork(network)) {
     return a.toLowerCase() === b.toLowerCase();
   }
   return false;
@@ -98,8 +99,13 @@ async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
     }
     return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY);
   }
-  if (network === "BEP20" && process.env.BSCSCAN_API_KEY) {
-    return pollEvm(address, currency, network, process.env.BSCSCAN_API_KEY, 56);
+  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+    if (!process.env.ETHERSCAN_API_KEY) {
+      return [];
+    }
+    const chain = getEvmChain(network);
+    if (!chain) return [];
+    return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY, chain.chainId);
   }
   if (network === "Bitcoin") {
     return pollBitcoin(address);

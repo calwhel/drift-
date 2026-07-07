@@ -111,7 +111,7 @@ export default function LandingPage() {
             Built for crypto commerce
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[14px] text-[#9ca3af]">
-            {["USDT on TRC20 & Solana", "1.5% per transaction", "Custodial & connected wallets", "Real-time payment detection"].map(
+            {["USDT on Tron, Solana, BSC, Polygon & more", "1.5% per transaction", "Custodial & connected wallets", "Real-time payment detection"].map(
               (item) => (
                 <span key={item} className="flex items-center gap-2">
                   <Icon name="Check" className="h-4 w-4 text-[#a855f7]" />

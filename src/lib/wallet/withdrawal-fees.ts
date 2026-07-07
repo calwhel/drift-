@@ -2,6 +2,11 @@
 const WITHDRAWAL_NETWORK_FEE_USDT: Record<string, number> = {
   "USDT|TRC20": 2,
   "USDT|SPL": 0.05,
+  "USDT|BEP20": 0.15,
+  "USDT|Polygon": 0.05,
+  "USDT|Arbitrum": 0.1,
+  "USDT|Base": 0.05,
+  "USDT|Avalanche": 0.1,
 };
 
 export function getWithdrawalNetworkFee(currency: string, network: string): number {

@@ -2,6 +2,7 @@ import { getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { blockstreamFetch, logBlockstreamError } from "./blockstream";
 import { etherscanV2Fetch, parseEtherscanV2Json } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
+import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 
 export interface OnChainWalletBalance {
   amount: number | null;
@@ -73,18 +74,91 @@ async function fetchEvmTokenBalance(
   currency: string,
   network: string,
   apiKey: string,
-  contract: string
+  contract: string,
+  chainId = 1,
+  decimals?: number
 ): Promise<number> {
-  const res = await etherscanV2Fetch(apiKey, {
-    module: "account",
-    action: "tokenbalance",
-    contractaddress: contract,
-    address,
-    tag: "latest",
-  });
+  const res = await etherscanV2Fetch(
+    apiKey,
+    {
+      module: "account",
+      action: "tokenbalance",
+      contractaddress: contract,
+      address,
+      tag: "latest",
+    },
+    chainId
+  );
   const result = await parseEtherscanV2Json<string>(res);
-  const decimals = getDecimals(currency, network);
-  return Number(result ?? 0) / Math.pow(10, decimals);
+  const tokenDecimals = decimals ?? getDecimals(currency, network);
+  return Number(result ?? 0) / Math.pow(10, tokenDecimals);
+}
+
+async function fetchEvmUsdtBalance(
+  address: string,
+  network: string
+): Promise<OnChainWalletBalance> {
+  const chain = getEvmChain(network);
+  const apiKey = process.env.ETHERSCAN_API_KEY;
+
+  if (!chain) {
+    return {
+      amount: null,
+      currency: "USDT",
+      network,
+      nativeGas: null,
+      error: `Unknown EVM network: ${network}`,
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      amount: null,
+      currency: "USDT",
+      network,
+      nativeGas: null,
+      error: "ETHERSCAN_API_KEY not set",
+    };
+  }
+
+  try {
+    const amount = await fetchEvmTokenBalance(
+      address,
+      "USDT",
+      network,
+      apiKey,
+      chain.usdtContract,
+      chain.chainId,
+      chain.usdtDecimals
+    );
+    let nativeGas: number | null = null;
+    try {
+      const res = await etherscanV2Fetch(
+        apiKey,
+        { module: "account", action: "balance", address, tag: "latest" },
+        chain.chainId
+      );
+      const result = await parseEtherscanV2Json<string>(res);
+      nativeGas = Number(result ?? 0) / Math.pow(10, chain.nativeDecimals);
+    } catch {
+      nativeGas = null;
+    }
+
+    return {
+      amount,
+      currency: "USDT",
+      network,
+      nativeGas: nativeGas != null ? { amount: nativeGas, symbol: chain.nativeSymbol } : null,
+    };
+  } catch (err) {
+    return {
+      amount: null,
+      currency: "USDT",
+      network,
+      nativeGas: null,
+      error: err instanceof Error ? err.message : `Failed to fetch ${network} balance`,
+    };
+  }
 }
 
 async function fetchEvmNativeBalance(
@@ -308,6 +382,9 @@ export async function fetchOnChainBalance(
   }
   if (network === "SPL" && currency === "USDT") {
     return fetchSplUsdtBalance(trimmed);
+  }
+  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+    return fetchEvmUsdtBalance(trimmed, network);
   }
   if (network === "Solana" && currency === "SOL") {
     return fetchSolanaNativeBalance(trimmed);
