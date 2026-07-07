@@ -74,27 +74,35 @@ export default function AdminWalletsPage() {
 
   const load = (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
-    Promise.all([
-      fetch("/api/admin/platform-wallets").then(async (r) => {
+    setError("");
+
+    fetch("/api/admin/platform-wallets")
+      .then(async (r) => {
         if (!r.ok) {
           const data = await r.json();
-          throw new Error(data.error ?? "Failed to load wallets");
+          throw new Error(data.error ?? "Failed to load platform wallets");
         }
         return r.json();
-      }),
-      fetch("/api/admin/gas-wallet").then(async (r) => {
-        if (!r.ok) {
-          const data = await r.json();
-          throw new Error(data.error ?? "Failed to load gas wallet");
-        }
-        return r.json();
-      }),
-    ])
-      .then(([platformData, gasData]) => {
+      })
+      .then((platformData) => {
         setWallets(platformData.data ?? []);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load platform wallets"));
+
+    fetch("/api/admin/gas-wallet")
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json();
+          throw new Error(data.error ?? "Failed to load gas wallets");
+        }
+        return r.json();
+      })
+      .then((gasData) => {
         setGasWallets(gasData as GasWalletResponse);
       })
-      .catch((err) => setError(err.message))
+      .catch((err) => {
+        setError((prev) => prev || (err instanceof Error ? err.message : "Failed to load gas wallets"));
+      })
       .finally(() => setRefreshing(false));
   };
 
