@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StatusBadge } from "@/components/status-badge";
@@ -9,6 +9,7 @@ import { getNetworkLabel } from "@/lib/constants";
 interface Withdrawal {
   id: string;
   amount: string;
+  feeAmount?: string | null;
   currency: string;
   network: string;
   toAddress: string;
@@ -26,8 +27,13 @@ interface WalletOption {
   label: string | null;
 }
 
+function feeKey(currency: string, network: string) {
+  return `${currency}|${network}`;
+}
+
 export default function PayoutsPage() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [networkFees, setNetworkFees] = useState<Record<string, number>>({});
   const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [walletId, setWalletId] = useState("");
   const [amount, setAmount] = useState("");
@@ -38,10 +44,19 @@ export default function PayoutsPage() {
   const custodialWallets = wallets.filter((w) => w.walletType === "generated");
   const selectedWallet = custodialWallets.find((w) => w.id === walletId);
 
+  const grossAmount = Number(amount) || 0;
+  const networkFee = selectedWallet
+    ? (networkFees[feeKey(selectedWallet.currency, selectedWallet.network)] ?? 0)
+    : 0;
+  const netAmount = Math.max(0, Math.round((grossAmount - networkFee) * 1e6) / 1e6);
+
   const load = () => {
     fetch("/api/withdrawals")
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setWithdrawals)
+      .then((r) => (r.ok ? r.json() : { withdrawals: [] }))
+      .then((d) => {
+        setWithdrawals(d.withdrawals ?? d);
+        setNetworkFees(d.networkFees ?? {});
+      })
       .catch(() => {});
   };
 
@@ -61,6 +76,11 @@ export default function PayoutsPage() {
       })
       .catch(() => {});
   }, []);
+
+  const feeHint = useMemo(() => {
+    if (!selectedWallet || networkFee <= 0) return null;
+    return `Network fee: ${networkFee} ${selectedWallet.currency} (deducted from your withdrawal)`;
+  }, [selectedWallet, networkFee]);
 
   const handleWithdraw = async () => {
     if (!walletId) {
@@ -87,6 +107,10 @@ export default function PayoutsPage() {
     setAmount("");
     setToAddress("");
     load();
+    fetch("/api/wallets")
+      .then((r) => (r.ok ? r.json() : { wallets: [] }))
+      .then((d) => setWallets((d.wallets ?? []).filter((w: WalletOption) => w.walletType === "generated")))
+      .catch(() => {});
   };
 
   const statusMap: Record<string, "Completed" | "Pending" | "Failed"> = {
@@ -132,7 +156,7 @@ export default function PayoutsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="section-label mb-1 block">Amount</label>
+                  <label className="section-label mb-1 block">Amount from balance</label>
                   <input
                     type="text"
                     value={amount}
@@ -140,6 +164,14 @@ export default function PayoutsPage() {
                     className="input w-full"
                     placeholder={selectedWallet ? `Max ${Number(selectedWallet.balance).toFixed(4)}` : "0.00"}
                   />
+                  {feeHint && grossAmount > 0 && (
+                    <p className="mt-1 text-2xs text-drift-muted">{feeHint}</p>
+                  )}
+                  {grossAmount > networkFee && networkFee > 0 && (
+                    <p className="mt-1 text-2xs text-drift-green">
+                      You receive: <strong>{netAmount.toFixed(4)} {selectedWallet?.currency}</strong>
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="section-label mb-1 block">Destination address</label>
@@ -157,7 +189,7 @@ export default function PayoutsPage() {
                 </div>
                 <button
                   onClick={handleWithdraw}
-                  disabled={loading || !amount || !toAddress || !walletId}
+                  disabled={loading || !amount || !toAddress || !walletId || netAmount < 0.01}
                   className="btn-primary w-full py-2"
                 >
                   {loading ? "Processing…" : "Withdraw"}
@@ -169,7 +201,8 @@ export default function PayoutsPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-drift-border text-drift-muted">
                 <tr>
-                  <th className="px-4 py-2">Amount</th>
+                  <th className="px-4 py-2">Sent</th>
+                  <th className="px-4 py-2">Fee</th>
                   <th className="px-4 py-2">Network</th>
                   <th className="px-4 py-2">Address</th>
                   <th className="px-4 py-2">Status</th>
@@ -177,29 +210,36 @@ export default function PayoutsPage() {
                 </tr>
               </thead>
               <tbody>
-                {withdrawals.map((w) => (
-                  <tr key={w.id} className="border-b border-drift-border/50">
-                    <td className="px-4 py-2.5 tabular-nums text-white">
-                      {w.amount} {w.currency}
-                    </td>
-                    <td className="px-4 py-2.5 text-drift-muted">
-                      {getNetworkLabel(w.currency, w.network)}
-                    </td>
-                    <td className="max-w-[120px] truncate px-4 py-2.5 font-mono text-2xs">{w.toAddress}</td>
-                    <td className="px-4 py-2.5">
-                      <StatusBadge status={statusMap[w.status] ?? "Pending"} />
-                      {w.status === "failed" && w.error ? (
-                        <p className="mt-1 max-w-[200px] text-[10px] text-drift-red">{w.error}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-2.5 text-drift-muted">
-                      {new Date(w.createdAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {withdrawals.map((w) => {
+                  const fee = Number(w.feeAmount ?? 0);
+                  const sent = Number(w.amount) - fee;
+                  return (
+                    <tr key={w.id} className="border-b border-drift-border/50">
+                      <td className="px-4 py-2.5 tabular-nums text-white">
+                        {sent.toFixed(4)} {w.currency}
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-drift-muted">
+                        {fee > 0 ? `${fee.toFixed(2)}` : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-drift-muted">
+                        {getNetworkLabel(w.currency, w.network)}
+                      </td>
+                      <td className="max-w-[120px] truncate px-4 py-2.5 font-mono text-2xs">{w.toAddress}</td>
+                      <td className="px-4 py-2.5">
+                        <StatusBadge status={statusMap[w.status] ?? "Pending"} />
+                        {w.status === "failed" && w.error ? (
+                          <p className="mt-1 max-w-[200px] text-[10px] text-drift-red">{w.error}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2.5 text-drift-muted">
+                        {new Date(w.createdAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {withdrawals.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-drift-muted">
+                    <td colSpan={6} className="px-4 py-8 text-center text-drift-muted">
                       No withdrawals yet
                     </td>
                   </tr>

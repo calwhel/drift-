@@ -6,6 +6,19 @@ import { derivePrivateKey } from "./derive";
 import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
 import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
 
+function getNetSendAmount(withdrawal: {
+  amount: string;
+  feeAmount: string | null;
+  currency: string;
+  network: string;
+}): number {
+  const gross = Number(withdrawal.amount);
+  if (withdrawal.feeAmount != null && withdrawal.feeAmount !== "") {
+    return Math.round((gross - Number(withdrawal.feeAmount)) * 1e6) / 1e6;
+  }
+  return gross;
+}
+
 async function refundWithdrawalBalance(withdrawal: {
   walletId: string | null;
   amount: string;
@@ -46,12 +59,12 @@ async function broadcastTrc20UsdtWithdrawal(
 }
 
 async function processTrc20UsdtWithdrawal(
-  withdrawal: { toAddress: string; amount: string },
+  withdrawal: { toAddress: string; amount: string; feeAmount: string | null; currency: string; network: string },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
-  const amount = Number(withdrawal.amount);
-  let remaining = amount;
+  const netAmount = getNetSendAmount(withdrawal);
+  let remaining = netAmount;
   const txHashes: string[] = [];
 
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
@@ -76,9 +89,9 @@ async function processTrc20UsdtWithdrawal(
     );
     const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
 
-    if (custodialBalance + depositTotal + 0.000001 < amount) {
+    if (custodialBalance + depositTotal + 0.000001 < netAmount) {
       throw new Error(
-        `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${amount.toFixed(4)}). ` +
+        `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
           "Funds may still be confirming — wait a few minutes and retry."
       );
     }
@@ -161,10 +174,11 @@ export async function processPendingWithdrawals(): Promise<number> {
       if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
         txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
       } else {
+        const netAmount = getNetSendAmount(withdrawal);
         txHash = await broadcastFromPrivateKey(
           privateKey,
           withdrawal.toAddress,
-          Number(withdrawal.amount),
+          netAmount,
           withdrawal.currency,
           withdrawal.network
         );
