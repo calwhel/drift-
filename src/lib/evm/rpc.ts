@@ -29,10 +29,17 @@ const RPC_FALLBACKS: Record<string, string[]> = {
   ],
 };
 
+/** Endpoints that require API keys or are frequently disabled — never use these. */
+const BLOCKED_RPC_URLS = new Set(["https://polygon-rpc.com"]);
+
+function isBlockedRpc(url: string): boolean {
+  return BLOCKED_RPC_URLS.has(url.replace(/\/$/, ""));
+}
+
 export function getEvmRpcUrls(chain: EvmChainConfig): string[] {
   const fromEnv = process.env[chain.rpcEnv]?.trim();
   const urls = [fromEnv, chain.defaultRpc, ...(RPC_FALLBACKS[chain.network] ?? [])].filter(
-    (u): u is string => Boolean(u)
+    (u): u is string => typeof u === "string" && u.length > 0 && !isBlockedRpc(u)
   );
   return Array.from(new Set(urls));
 }
