@@ -1,4 +1,4 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
@@ -383,12 +383,12 @@ export async function pollAllNetworks() {
 }
 
 async function updateConfirmingTransactions() {
-  const confirming = await db
+  const open = await db
     .select()
     .from(transactions)
-    .where(eq(transactions.status, "confirming"));
+    .where(inArray(transactions.status, ["confirming", "underpaid", "overpaid"]));
 
-  for (const tx of confirming) {
+  for (const tx of open) {
     if (!tx.txHash) continue;
 
     const required = getRequiredConfirmations(tx.currency, tx.network);
@@ -501,7 +501,12 @@ async function findMatchingPaymentLink(payment: DetectedPayment) {
   );
   if (exactMatch) return exactMatch;
 
-  // Do not attach unrelated amounts to the newest link (prevents false underpaid)
+  // Accept any positive payment to this deposit address (including underpaid).
+  // Each checkout gets a unique address when MASTER_WALLET_MNEMONIC is set.
+  if (payment.amount > 0 && eligible.length > 0) {
+    return eligible[0];
+  }
+
   return null;
 }
 
@@ -515,7 +520,11 @@ async function processDetectedPayment(payment: DetectedPayment) {
     .limit(1);
 
   if (existing) {
-    if (existing.status === "confirming") {
+    if (
+      existing.status === "confirming" ||
+      existing.status === "underpaid" ||
+      existing.status === "overpaid"
+    ) {
       await db
         .update(transactions)
         .set({
@@ -567,7 +576,7 @@ async function processDetectedPayment(payment: DetectedPayment) {
     });
 
     if (
-      (status === "confirming" || status === "overpaid") &&
+      (status === "confirming" || status === "underpaid" || status === "overpaid") &&
       payment.confirmations >= getRequiredConfirmations(link.currency, link.network)
     ) {
       await completeTransaction(tx.id);
@@ -631,7 +640,7 @@ export async function completeTransaction(transactionId: string) {
     .limit(1);
 
   if (!tx || tx.status === "completed") return;
-  if (tx.status === "underpaid" || tx.status === "failed") return;
+  if (tx.status === "failed") return;
 
   const net = Number(tx.netAmount ?? 0);
   const fee = Number(tx.feeAmount ?? 0);

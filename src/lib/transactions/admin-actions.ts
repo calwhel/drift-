@@ -34,13 +34,6 @@ export async function adminCompleteTransaction(transactionId: string) {
   if (!tx) throw new Error("Transaction not found");
   if (tx.status === "completed") return tx;
 
-  if (tx.status === "underpaid" || tx.status === "overpaid") {
-    await db
-      .update(transactions)
-      .set({ status: "confirming", updatedAt: new Date() })
-      .where(eq(transactions.id, transactionId));
-  }
-
   await completeTransaction(transactionId);
 }
 
