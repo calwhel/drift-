@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db, wallets } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { requireTwoFactorVerified } from "@/lib/auth";
-import { MERCHANT_WALLET_NETWORKS, type WalletType } from "@/lib/constants";
+import { MERCHANT_WALLET_NETWORKS, disabledNetworkMessage, isMerchantNetworkEnabled, type WalletType } from "@/lib/constants";
 import { generateWalletForNetwork, validateWalletAddress } from "@/lib/wallet/generate";
 import { logAudit } from "@/lib/audit";
 import { fetchOnChainBalancesForWallets } from "@/lib/blockchain/balances";
@@ -18,9 +18,7 @@ const createSchema = z.object({
 });
 
 function isSupportedNetwork(currency: string, network: string) {
-  return MERCHANT_WALLET_NETWORKS.some(
-    (n) => n.currency === currency && n.network === network
-  );
+  return isMerchantNetworkEnabled(currency, network);
 }
 
 export async function GET(req: NextRequest) {
@@ -76,7 +74,11 @@ export async function POST(req: NextRequest) {
     const network = data.network;
 
     if (!isSupportedNetwork(currency, network)) {
-      return NextResponse.json({ error: "Unsupported currency/network" }, { status: 400 });
+      const disabled = disabledNetworkMessage(network);
+      return NextResponse.json(
+        { error: disabled ?? "Unsupported currency/network" },
+        { status: 400 }
+      );
     }
 
     const [existing] = await db

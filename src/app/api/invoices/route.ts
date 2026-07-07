@@ -6,7 +6,7 @@ import { db, invoices, invoiceItems, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { getWalletForCurrencyAndNetwork } from "@/lib/wallet/helpers";
 import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
-import { defaultNetworkForCurrency } from "@/lib/constants";
+import { defaultNetworkForCurrency, disabledNetworkMessage, isMerchantNetworkEnabled } from "@/lib/constants";
 
 const itemSchema = z.object({
   description: z.string(),
@@ -46,6 +46,13 @@ export async function POST(req: NextRequest) {
     const data = createSchema.parse(body);
     const currency = data.currency.toUpperCase();
     const network = data.network ?? defaultNetworkForCurrency(currency);
+    const disabled = disabledNetworkMessage(network);
+    if (disabled || !isMerchantNetworkEnabled(currency, network)) {
+      return NextResponse.json(
+        { error: disabled ?? "This network is not supported." },
+        { status: 400 }
+      );
+    }
 
     const subtotal = data.items.reduce(
       (s, i) => s + i.quantity * i.unit_price,

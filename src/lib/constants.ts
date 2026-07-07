@@ -4,32 +4,23 @@ export const NET_RATE = 0.985;
 /** USDT networks merchants can choose when creating wallets or payment links */
 export const USDT_NETWORKS = [
   { network: "TRC20", label: "TRC20 (Tron)" },
-  { network: "ERC20", label: "ERC20 (Ethereum)" },
   { network: "SPL", label: "Solana (SPL)" },
 ] as const;
 
 export type UsdtNetwork = (typeof USDT_NETWORKS)[number]["network"];
 
+/** Networks available for new merchant wallets and payment links */
 export const MERCHANT_WALLET_NETWORKS = [
   { currency: "USDT", network: "TRC20", label: "USDT (TRC20)" },
-  { currency: "USDT", network: "ERC20", label: "USDT (ERC20)" },
   { currency: "USDT", network: "SPL", label: "USDT (Solana SPL)" },
-  { currency: "BTC", network: "Bitcoin", label: "Bitcoin" },
-  { currency: "ETH", network: "ERC20", label: "Ethereum (ERC20)" },
-  { currency: "USDC", network: "ERC20", label: "USDC (ERC20)" },
-  { currency: "SOL", network: "Solana", label: "Solana (native)" },
 ] as const;
 
 export type WalletType = "connected" | "generated";
 
+/** Platform fee collection addresses (admin) — USDT on Tron and Solana only */
 export const PLATFORM_WALLET_NETWORKS = [
   { currency: "USDT", network: "TRC20", label: "USDT (TRC20)" },
-  { currency: "USDT", network: "ERC20", label: "USDT (ERC20)" },
   { currency: "USDT", network: "SPL", label: "USDT (Solana SPL)" },
-  { currency: "BTC", network: "Bitcoin", label: "Bitcoin" },
-  { currency: "ETH", network: "ERC20", label: "Ethereum" },
-  { currency: "USDC", network: "ERC20", label: "USDC (ERC20)" },
-  { currency: "SOL", network: "Solana", label: "Solana (native)" },
 ] as const;
 
 /** Legacy default network per currency (used when network omitted) */
@@ -84,7 +75,24 @@ export function getNetworkLabel(currency: string, network: string): string {
   const found = MERCHANT_WALLET_NETWORKS.find(
     (n) => n.currency === currency && n.network === network
   );
-  return found?.label ?? `${currency} (${network})`;
+  if (found) return found.label;
+  if (currency === "USDT" && network === "ERC20") return "USDT (ERC20 — legacy)";
+  if (network === "ERC20" && currency === "ETH") return "Ethereum (ERC20 — legacy)";
+  if (network === "ERC20" && currency === "USDC") return "USDC (ERC20 — legacy)";
+  return `${currency} (${network})`;
+}
+
+export function isMerchantNetworkEnabled(currency: string, network: string): boolean {
+  return MERCHANT_WALLET_NETWORKS.some(
+    (n) => n.currency === currency && n.network === network
+  );
+}
+
+export function disabledNetworkMessage(network: string): string | null {
+  if (network === "ERC20") {
+    return "Ethereum (ERC20) is disabled. Use USDT on TRC20 (Tron) or Solana.";
+  }
+  return null;
 }
 
 export function getHoldingAddress(currency: string, network: string): string {
@@ -113,9 +121,14 @@ export function getDecimals(currency: string, network?: string): number {
 }
 
 export function defaultNetworkForCurrency(currency: string): string {
+  if (currency === "USDT") return "TRC20";
   return NETWORKS[currency as SupportedCurrency]?.network ?? "TRC20";
 }
 
 export function isUsdtNetwork(network: string): boolean {
   return USDT_NETWORKS.some((n) => n.network === network);
+}
+
+export function isActivePaymentNetwork(network: string): boolean {
+  return network === "TRC20" || network === "SPL";
 }

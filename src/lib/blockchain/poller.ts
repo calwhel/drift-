@@ -66,6 +66,7 @@ async function getPollTargets(): Promise<PollTarget[]> {
   const targets = new Map<string, PollTarget>();
 
   for (const link of validLinks) {
+    if (link.network === "ERC20") continue;
     targets.set(pollTargetKey(link.depositAddress, link.currency, link.network), {
       address: link.depositAddress,
       currency: link.currency,
@@ -74,6 +75,7 @@ async function getPollTargets(): Promise<PollTarget[]> {
   }
 
   for (const wallet of generatedWallets) {
+    if (wallet.network === "ERC20") continue;
     targets.set(pollTargetKey(wallet.address, wallet.currency, wallet.network), {
       address: wallet.address,
       currency: wallet.currency,

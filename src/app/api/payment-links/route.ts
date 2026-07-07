@@ -7,6 +7,7 @@ import { authenticateRequest } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
 import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
+import { disabledNetworkMessage, isMerchantNetworkEnabled } from "@/lib/constants";
 
 function formatApiError(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -101,6 +102,14 @@ export async function POST(req: NextRequest) {
     if (wallet.network !== network) {
       return NextResponse.json(
         { error: "Selected wallet network does not match payment link network" },
+        { status: 400 }
+      );
+    }
+
+    const disabled = disabledNetworkMessage(network);
+    if (disabled || !isMerchantNetworkEnabled(currency, network)) {
+      return NextResponse.json(
+        { error: disabled ?? "This network is not supported for new payment links." },
         { status: 400 }
       );
     }
