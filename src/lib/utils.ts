@@ -25,6 +25,8 @@ export function getUserInitials(name?: string | null): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+import { getEvmChain } from "./evm/chains";
+
 export function blockExplorerAddressUrl(address: string, network: string): string {
   switch (network) {
     case "TRC20":
@@ -36,7 +38,10 @@ export function blockExplorerAddressUrl(address: string, network: string): strin
       return `https://solscan.io/account/${address}`;
     case "Bitcoin":
       return `https://blockstream.info/address/${address}`;
-    default:
+    default: {
+      const chain = getEvmChain(network);
+      if (chain) return chain.explorerAddress(address);
       return `https://etherscan.io/address/${address}`;
+    }
   }
 }

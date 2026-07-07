@@ -9,9 +9,15 @@ import { db, derivationCounter } from "../db";
 import { defaultNetworkForCurrency } from "../constants";
 import { getMasterWalletMnemonic } from "./master-wallet";
 
+const EVM_PATH = (i: number) => `m/44'/60'/0'/0/${i}`;
+
 const DERIVATION_PATHS: Record<string, (index: number) => string> = {
-  ERC20: (i) => `m/44'/60'/0'/0/${i}`,
-  BEP20: (i) => `m/44'/60'/0'/0/${i}`,
+  ERC20: EVM_PATH,
+  BEP20: EVM_PATH,
+  Polygon: EVM_PATH,
+  Arbitrum: EVM_PATH,
+  Base: EVM_PATH,
+  Avalanche: EVM_PATH,
   TRC20: (i) => `m/44'/195'/0'/0/${i}`,
   Bitcoin: (i) => `m/84'/0'/0'/0/${i}`,
   Solana: (i) => `m/44'/501'/${i}'/0'`,

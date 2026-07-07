@@ -3,6 +3,7 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import { sha256 } from "@noble/hashes/sha2.js";
 import * as bitcoin from "bitcoinjs-lib";
+import { isEvmAddressNetwork } from "../evm/chains";
 import { encryptPrivateKey } from "./encryption";
 
 function tronAddressFromPrivateKey(privateKeyHex: string): string {
@@ -52,7 +53,7 @@ export function generateWalletForNetwork(currency: string, network: string): Gen
     const keypair = Keypair.generate();
     privateKey = Buffer.from(keypair.secretKey).toString("hex");
     address = keypair.publicKey.toBase58();
-  } else if (network === "ERC20") {
+  } else if (isEvmAddressNetwork(network)) {
     privateKey = ethWallet.privateKey;
     address = computeAddress(privateKey);
   } else {
@@ -69,7 +70,7 @@ export function generateWalletForNetwork(currency: string, network: string): Gen
 export function validateWalletAddress(address: string, network: string): boolean {
   const trimmed = address.trim();
   if (trimmed.length < 10) return false;
-  if (network === "ERC20" || network === "BEP20") {
+  if (isEvmAddressNetwork(network) || network === "ERC20") {
     return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
   }
   if (network === "TRC20") return /^T[a-zA-Z0-9]{33}$/.test(trimmed);

@@ -5,6 +5,7 @@ import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
 import { fundTronAddressIfNeeded, getTronSourceAddress } from "./tron-gas";
 import { notifyFeeSettlementFailed, notifyFeeSettlementSuccess } from "../telegram";
+import { isUsdtLedgerOnly } from "../constants";
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -28,8 +29,7 @@ export async function queueSettlements(
   const merchantAddress = sourceWallet?.address;
   const feeWallet = await getPlatformFeeAddress(currency, network);
   const isGenerated = sourceWallet?.walletType === "generated";
-  /** TRC20 USDT stays on deposit addresses until withdrawal — avoids 2 on-chain sweeps per payment (~12+ TRX). */
-  const trc20LedgerOnly = network === "TRC20" && currency === "USDT";
+  const ledgerOnly = isUsdtLedgerOnly(currency, network);
 
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
     if (isGenerated) {
@@ -76,7 +76,7 @@ export async function queueSettlements(
     }
   }
 
-  if (feeAmount > 0 && trc20LedgerOnly && feeWallet) {
+  if (feeAmount > 0 && ledgerOnly && feeWallet) {
     await db.insert(settlements).values({
       transactionId,
       userId,
