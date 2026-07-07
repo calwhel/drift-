@@ -5,6 +5,11 @@ import { db, withdrawals, wallets, users } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { logAudit } from "@/lib/audit";
 import { validateWalletAddress } from "@/lib/wallet/generate";
+import {
+  getWithdrawalNetworkFees,
+  quoteWithdrawal,
+  validateWithdrawalAmount,
+} from "@/lib/wallet/withdrawal-fees";
 import { notifyWithdrawalRequested } from "@/lib/telegram";
 
 const createSchema = z.object({
@@ -23,7 +28,10 @@ export async function GET(req: NextRequest) {
     .where(eq(withdrawals.userId, auth.userId))
     .orderBy(desc(withdrawals.createdAt));
 
-  return NextResponse.json(rows);
+  return NextResponse.json({
+    withdrawals: rows,
+    networkFees: getWithdrawalNetworkFees(),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -59,9 +67,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid destination address" }, { status: 400 });
     }
 
-    if (Number(wallet.balance) < data.amount) {
-      return NextResponse.json({ error: "Insufficient balance" }, { status: 400 });
+    const validationError = validateWithdrawalAmount(
+      wallet.currency,
+      wallet.network,
+      data.amount,
+      Number(wallet.balance)
+    );
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
     }
+
+    const { networkFee, netAmount } = quoteWithdrawal(
+      wallet.currency,
+      wallet.network,
+      data.amount
+    );
 
     const newBalance = Number(wallet.balance) - data.amount;
     await db
@@ -75,6 +95,7 @@ export async function POST(req: NextRequest) {
         userId: auth.userId,
         walletId: wallet.id,
         amount: String(data.amount),
+        feeAmount: String(networkFee),
         currency: wallet.currency,
         network: wallet.network,
         toAddress: data.to_address.trim(),
@@ -91,14 +112,21 @@ export async function POST(req: NextRequest) {
       .limit(1);
 
     notifyWithdrawalRequested({
-      amount: withdrawal.amount,
+      amount: String(netAmount),
       currency: withdrawal.currency,
       network: withdrawal.network,
       toAddress: withdrawal.toAddress,
       merchantName: merchant?.businessName,
     });
 
-    return NextResponse.json(withdrawal, { status: 201 });
+    return NextResponse.json(
+      {
+        ...withdrawal,
+        net_amount: String(netAmount),
+        network_fee: String(networkFee),
+      },
+      { status: 201 }
+    );
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues.map((i) => i.message).join(". ") }, { status: 400 });
