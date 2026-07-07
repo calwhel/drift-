@@ -10,6 +10,7 @@ import {
   quoteWithdrawal,
   validateWithdrawalAmount,
 } from "@/lib/wallet/withdrawal-fees";
+import { getTrc20WithdrawableOnChain } from "@/lib/wallet/tron-deposits";
 import { notifyWithdrawalRequested } from "@/lib/telegram";
 
 const createSchema = z.object({
@@ -82,6 +83,28 @@ export async function POST(req: NextRequest) {
       wallet.network,
       data.amount
     );
+
+    if (wallet.network === "TRC20" && wallet.currency === "USDT") {
+      try {
+        const onChain = await getTrc20WithdrawableOnChain(auth.userId, wallet.address);
+        if (onChain.total + 0.000001 < netAmount) {
+          return NextResponse.json(
+            {
+              error:
+                `Not enough USDT on-chain to send ${netAmount.toFixed(4)} USDT (found ${onChain.total.toFixed(4)} across wallet and deposit addresses). ` +
+                "Wait for payments to confirm, then try again.",
+            },
+            { status: 400 }
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not verify on-chain balance";
+        return NextResponse.json(
+          { error: `${message}. Wait a minute and try again.` },
+          { status: 503 }
+        );
+      }
+    }
 
     const newBalance = Number(wallet.balance) - data.amount;
     await db

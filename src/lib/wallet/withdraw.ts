@@ -3,7 +3,8 @@ import { db, withdrawals, wallets } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
-import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
+import { findTrc20DepositSourcesWithBalance, getTrc20WithdrawableOnChain } from "./tron-deposits";
+import { isTronRateLimitError } from "../blockchain/trongrid";
 import { findEvmDepositSourcesWithBalance } from "../evm/deposits";
 import { findSplDepositSourcesWithBalance } from "./spl-deposits";
 import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
@@ -104,21 +105,22 @@ async function processTrc20UsdtWithdrawal(
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findTrc20DepositSourcesWithBalance(
-        wallet.userId,
-        wallet.id
-      );
+      const depositSources = await findTrc20DepositSourcesWithBalance(wallet.userId);
       const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         throw new Error(
-          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
-            "Funds may still be confirming — wait a few minutes and retry."
+          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)} across wallet + ${depositSources.length} deposit address(es), need ${netAmount.toFixed(4)} net). ` +
+            "Payments may still be confirming — wait a few minutes and retry."
         );
       }
 
       for (const source of depositSources) {
         if (remaining <= 0.000001) break;
+        if (source.derivationIndex == null) {
+          console.warn(`[withdraw] Skipping deposit ${source.address} — missing derivation index`);
+          continue;
+        }
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex, "TRC20");
@@ -201,7 +203,6 @@ async function processEvmUsdtWithdrawal(
     if (remaining > 0.000001) {
       const depositSources = await findEvmDepositSourcesWithBalance(
         wallet.userId,
-        wallet.id,
         network
       );
       const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
@@ -215,6 +216,7 @@ async function processEvmUsdtWithdrawal(
 
       for (const source of depositSources) {
         if (remaining <= 0.000001) break;
+        if (source.derivationIndex == null) continue;
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex, network);
@@ -285,7 +287,7 @@ async function processSplUsdtWithdrawal(
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findSplDepositSourcesWithBalance(wallet.userId, wallet.id);
+      const depositSources = await findSplDepositSourcesWithBalance(wallet.userId);
       const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
@@ -297,6 +299,7 @@ async function processSplUsdtWithdrawal(
 
       for (const source of depositSources) {
         if (remaining <= 0.000001) break;
+        if (source.derivationIndex == null) continue;
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex, "SPL");
@@ -329,6 +332,14 @@ async function processSplUsdtWithdrawal(
 
   return txHashes.join(",");
 }
+
+function isRetryableWithdrawalError(err: unknown): boolean {
+  if (isTronRateLimitError(err)) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /429|rate limit|too many requests|try again in a minute/i.test(msg);
+}
+
+export { getTrc20WithdrawableOnChain };
 
 export async function processPendingWithdrawals(): Promise<number> {
   const pending = await db
@@ -406,6 +417,17 @@ export async function processPendingWithdrawals(): Promise<number> {
       if (err instanceof PartialWithdrawalError) {
         netSent = err.netSent;
       }
+
+      if (isRetryableWithdrawalError(err)) {
+        await db
+          .update(withdrawals)
+          .set({
+            error: err instanceof Error ? err.message : "TronGrid rate limit — will retry",
+          })
+          .where(eq(withdrawals.id, withdrawal.id));
+        continue;
+      }
+
       await refundWithdrawalBalance(withdrawal, netSent);
       await db
         .update(withdrawals)

@@ -24,25 +24,38 @@ function solanaKeypairFromPrivateKey(privateKey: string) {
 
 async function broadcastTrc20Usdt(privateKey: string, toAddress: string, amount: number): Promise<string> {
   const { TronWeb } = await import("tronweb");
+  const { isTronRateLimitError } = await import("../blockchain/trongrid");
   const pk = normalizePrivateKey(privateKey);
-  const tronWeb = new TronWeb({
-    fullHost: process.env.TRON_FULL_HOST ?? "https://api.trongrid.io",
-    headers: process.env.TRONGRID_API_KEY
-      ? { "TRON-PRO-API-KEY": process.env.TRONGRID_API_KEY }
-      : {},
-    privateKey: pk,
-  });
+  const maxAttempts = 4;
 
-  const contract = await tronWeb.contract().at(TOKEN_CONTRACTS.TRC20.USDT);
-  const sunAmount = Math.round(amount * 1e6);
-  const result = await contract.transfer(toAddress, sunAmount).send();
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const tronWeb = new TronWeb({
+        fullHost: process.env.TRON_FULL_HOST ?? "https://api.trongrid.io",
+        headers: process.env.TRONGRID_API_KEY
+          ? { "TRON-PRO-API-KEY": process.env.TRONGRID_API_KEY }
+          : {},
+        privateKey: pk,
+      });
 
-  if (typeof result === "string") return result;
-  if (result && typeof result === "object") {
-    const r = result as { txid?: string; transaction?: { txID?: string } };
-    return r.txid ?? r.transaction?.txID ?? String(result);
+      const contract = await tronWeb.contract().at(TOKEN_CONTRACTS.TRC20.USDT);
+      const sunAmount = Math.round(amount * 1e6);
+      const result = await contract.transfer(toAddress, sunAmount).send();
+
+      if (typeof result === "string") return result;
+      if (result && typeof result === "object") {
+        const r = result as { txid?: string; transaction?: { txID?: string } };
+        return r.txid ?? r.transaction?.txID ?? String(result);
+      }
+      return String(result);
+    } catch (err) {
+      if (!isTronRateLimitError(err) || attempt === maxAttempts) throw err;
+      const backoffMs = Math.min(2000 * 2 ** (attempt - 1), 15000);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
   }
-  return String(result);
+
+  throw new Error("TRC20 broadcast failed after retries");
 }
 
 async function broadcastSplUsdt(
