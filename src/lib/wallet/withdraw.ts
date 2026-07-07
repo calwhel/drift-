@@ -1,13 +1,25 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, withdrawals, wallets } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
 import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
 import { findEvmDepositSourcesWithBalance } from "../evm/deposits";
+import { findSplDepositSourcesWithBalance } from "./spl-deposits";
 import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
 import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
+import { fundSolIfNeeded } from "./spl-gas";
 import { isEvmUsdtNetwork } from "../evm/chains";
+
+class PartialWithdrawalError extends Error {
+  constructor(
+    message: string,
+    public netSent: number
+  ) {
+    super(message);
+    this.name = "PartialWithdrawalError";
+  }
+}
 
 function getNetSendAmount(withdrawal: {
   amount: string;
@@ -22,11 +34,15 @@ function getNetSendAmount(withdrawal: {
   return gross;
 }
 
-async function refundWithdrawalBalance(withdrawal: {
-  walletId: string | null;
-  amount: string;
-}): Promise<void> {
+async function refundWithdrawalBalance(
+  withdrawal: { walletId: string | null; amount: string },
+  netSent = 0
+): Promise<void> {
   if (!withdrawal.walletId) return;
+
+  const gross = Number(withdrawal.amount);
+  const refund = Math.round((gross - netSent) * 1e6) / 1e6;
+  if (refund <= 0) return;
 
   const [wallet] = await db
     .select({ balance: wallets.balance })
@@ -36,10 +52,11 @@ async function refundWithdrawalBalance(withdrawal: {
 
   if (!wallet) return;
 
-  const restored = Number(wallet.balance) + Number(withdrawal.amount);
   await db
     .update(wallets)
-    .set({ balance: String(restored) })
+    .set({
+      balance: sql`${wallets.balance}::numeric + ${String(refund)}`,
+    })
     .where(eq(wallets.id, withdrawal.walletId));
 }
 
@@ -73,52 +90,63 @@ async function processTrc20UsdtWithdrawal(
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
   const custodialBalance = custodial.amount ?? 0;
 
-  if (custodialBalance > 0.000001) {
-    const sendAmount = Math.min(custodialBalance, remaining);
-    const hash = await broadcastTrc20UsdtWithdrawal(
-      privateKey,
-      wallet.address,
-      withdrawal.toAddress,
-      sendAmount
-    );
-    txHashes.push(hash);
-    remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
-  }
-
-  if (remaining > 0.000001) {
-    const depositSources = await findTrc20DepositSourcesWithBalance(
-      wallet.userId,
-      wallet.id
-    );
-    const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
-
-    if (custodialBalance + depositTotal + 0.000001 < netAmount) {
-      throw new Error(
-        `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
-          "Funds may still be confirming — wait a few minutes and retry."
-      );
-    }
-
-    for (const source of depositSources) {
-      if (remaining <= 0.000001) break;
-
-      const sendAmount = Math.min(source.balance, remaining);
-      const depositKey = derivePrivateKey(source.derivationIndex, "TRC20");
+  try {
+    if (custodialBalance > 0.000001) {
+      const sendAmount = Math.min(custodialBalance, remaining);
       const hash = await broadcastTrc20UsdtWithdrawal(
-        depositKey,
-        source.address,
+        privateKey,
+        wallet.address,
         withdrawal.toAddress,
         sendAmount
       );
       txHashes.push(hash);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
     }
-  }
 
-  if (remaining > 0.000001) {
-    throw new Error(
-      `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
-    );
+    if (remaining > 0.000001) {
+      const depositSources = await findTrc20DepositSourcesWithBalance(
+        wallet.userId,
+        wallet.id
+      );
+      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+
+      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+        throw new Error(
+          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+            "Funds may still be confirming — wait a few minutes and retry."
+        );
+      }
+
+      for (const source of depositSources) {
+        if (remaining <= 0.000001) break;
+
+        const sendAmount = Math.min(source.balance, remaining);
+        const depositKey = derivePrivateKey(source.derivationIndex, "TRC20");
+        const hash = await broadcastTrc20UsdtWithdrawal(
+          depositKey,
+          source.address,
+          withdrawal.toAddress,
+          sendAmount
+        );
+        txHashes.push(hash);
+        remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      }
+    }
+
+    if (remaining > 0.000001) {
+      throw new Error(
+        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+      );
+    }
+  } catch (err) {
+    const netSent = netAmount - remaining;
+    if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
+      throw new PartialWithdrawalError(
+        err instanceof Error ? err.message : "Withdrawal broadcast failed",
+        netSent
+      );
+    }
+    throw err;
   }
 
   return txHashes.join(",");
@@ -156,55 +184,147 @@ async function processEvmUsdtWithdrawal(
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
   const custodialBalance = custodial.amount ?? 0;
 
-  if (custodialBalance > 0.000001) {
-    const sendAmount = Math.min(custodialBalance, remaining);
-    const hash = await broadcastEvmUsdtWithdrawal(
-      network,
-      privateKey,
-      wallet.address,
-      withdrawal.toAddress,
-      sendAmount
-    );
-    txHashes.push(hash);
-    remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
-  }
-
-  if (remaining > 0.000001) {
-    const depositSources = await findEvmDepositSourcesWithBalance(
-      wallet.userId,
-      wallet.id,
-      network
-    );
-    const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
-
-    if (custodialBalance + depositTotal + 0.000001 < netAmount) {
-      throw new Error(
-        `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
-          "Funds may still be confirming — wait a few minutes and retry."
-      );
-    }
-
-    for (const source of depositSources) {
-      if (remaining <= 0.000001) break;
-
-      const sendAmount = Math.min(source.balance, remaining);
-      const depositKey = derivePrivateKey(source.derivationIndex, network);
+  try {
+    if (custodialBalance > 0.000001) {
+      const sendAmount = Math.min(custodialBalance, remaining);
       const hash = await broadcastEvmUsdtWithdrawal(
         network,
-        depositKey,
-        source.address,
+        privateKey,
+        wallet.address,
         withdrawal.toAddress,
         sendAmount
       );
       txHashes.push(hash);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
     }
+
+    if (remaining > 0.000001) {
+      const depositSources = await findEvmDepositSourcesWithBalance(
+        wallet.userId,
+        wallet.id,
+        network
+      );
+      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+
+      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+        throw new Error(
+          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+            "Funds may still be confirming — wait a few minutes and retry."
+        );
+      }
+
+      for (const source of depositSources) {
+        if (remaining <= 0.000001) break;
+
+        const sendAmount = Math.min(source.balance, remaining);
+        const depositKey = derivePrivateKey(source.derivationIndex, network);
+        const hash = await broadcastEvmUsdtWithdrawal(
+          network,
+          depositKey,
+          source.address,
+          withdrawal.toAddress,
+          sendAmount
+        );
+        txHashes.push(hash);
+        remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      }
+    }
+
+    if (remaining > 0.000001) {
+      throw new Error(
+        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+      );
+    }
+  } catch (err) {
+    const netSent = netAmount - remaining;
+    if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
+      throw new PartialWithdrawalError(
+        err instanceof Error ? err.message : "Withdrawal broadcast failed",
+        netSent
+      );
+    }
+    throw err;
   }
 
-  if (remaining > 0.000001) {
-    throw new Error(
-      `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
-    );
+  return txHashes.join(",");
+}
+
+async function broadcastSplUsdtWithdrawal(
+  privateKey: string,
+  fromAddress: string,
+  toAddress: string,
+  amount: number
+): Promise<string> {
+  await fundSolIfNeeded(fromAddress);
+  return broadcastFromPrivateKey(privateKey, toAddress, amount, "USDT", "SPL");
+}
+
+async function processSplUsdtWithdrawal(
+  withdrawal: { toAddress: string; amount: string; feeAmount: string | null; currency: string; network: string },
+  wallet: typeof wallets.$inferSelect,
+  privateKey: string
+): Promise<string> {
+  const netAmount = getNetSendAmount(withdrawal);
+  let remaining = netAmount;
+  const txHashes: string[] = [];
+
+  const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
+  const custodialBalance = custodial.amount ?? 0;
+
+  try {
+    if (custodialBalance > 0.000001) {
+      const sendAmount = Math.min(custodialBalance, remaining);
+      const hash = await broadcastSplUsdtWithdrawal(
+        privateKey,
+        wallet.address,
+        withdrawal.toAddress,
+        sendAmount
+      );
+      txHashes.push(hash);
+      remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+    }
+
+    if (remaining > 0.000001) {
+      const depositSources = await findSplDepositSourcesWithBalance(wallet.userId, wallet.id);
+      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+
+      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+        throw new Error(
+          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+            "Funds may still be confirming — wait a few minutes and retry."
+        );
+      }
+
+      for (const source of depositSources) {
+        if (remaining <= 0.000001) break;
+
+        const sendAmount = Math.min(source.balance, remaining);
+        const depositKey = derivePrivateKey(source.derivationIndex, "SPL");
+        const hash = await broadcastSplUsdtWithdrawal(
+          depositKey,
+          source.address,
+          withdrawal.toAddress,
+          sendAmount
+        );
+        txHashes.push(hash);
+        remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      }
+    }
+
+    if (remaining > 0.000001) {
+      throw new Error(
+        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+      );
+    }
+  } catch (err) {
+    const netSent = netAmount - remaining;
+    if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
+      throw new PartialWithdrawalError(
+        err instanceof Error ? err.message : "Withdrawal broadcast failed",
+        netSent
+      );
+    }
+    throw err;
   }
 
   return txHashes.join(",");
@@ -219,17 +339,17 @@ export async function processPendingWithdrawals(): Promise<number> {
   let processed = 0;
 
   for (const withdrawal of pending) {
+    let netSent = 0;
+
     try {
       if (!withdrawal.walletId) {
         await db
           .update(withdrawals)
           .set({
-            status: "completed",
-            completedAt: new Date(),
-            error: "Ledger withdrawal (connected wallet)",
+            status: "failed",
+            error: "Withdrawals require a custodial wallet",
           })
           .where(eq(withdrawals.id, withdrawal.id));
-        processed++;
         continue;
       }
 
@@ -264,6 +384,8 @@ export async function processPendingWithdrawals(): Promise<number> {
         txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
       } else if (isEvmUsdtNetwork(withdrawal.network) && withdrawal.currency === "USDT") {
         txHash = await processEvmUsdtWithdrawal(withdrawal, wallet, privateKey);
+      } else if (withdrawal.network === "SPL" && withdrawal.currency === "USDT") {
+        txHash = await processSplUsdtWithdrawal(withdrawal, wallet, privateKey);
       } else {
         const netAmount = getNetSendAmount(withdrawal);
         txHash = await broadcastFromPrivateKey(
@@ -281,7 +403,10 @@ export async function processPendingWithdrawals(): Promise<number> {
         .where(eq(withdrawals.id, withdrawal.id));
       processed++;
     } catch (err) {
-      await refundWithdrawalBalance(withdrawal);
+      if (err instanceof PartialWithdrawalError) {
+        netSent = err.netSent;
+      }
+      await refundWithdrawalBalance(withdrawal, netSent);
       await db
         .update(withdrawals)
         .set({

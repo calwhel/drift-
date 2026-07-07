@@ -52,12 +52,18 @@ export default function PayoutsPage() {
 
   const load = () => {
     fetch("/api/withdrawals")
-      .then((r) => (r.ok ? r.json() : { withdrawals: [] }))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load withdrawals");
+        }
+        return r.json();
+      })
       .then((d) => {
         setWithdrawals(d.withdrawals ?? d);
         setNetworkFees(d.networkFees ?? {});
       })
-      .catch(() => {});
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load withdrawals"));
   };
 
   useEffect(() => {

@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: err.issues.map((i) => i.message).join(". ") }, { status: 400 });
     }
-    return NextResponse.json({ error: "Withdrawal failed" }, { status: 500 });
+    console.error("[withdrawals] POST failed:", err);
+    const message = err instanceof Error ? err.message : "Withdrawal failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

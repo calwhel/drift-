@@ -130,12 +130,18 @@ export default function WalletsPage() {
   const load = useCallback((showRefresh = false) => {
     if (showRefresh) setRefreshingBalances(true);
     fetch("/api/wallets")
-      .then((r) => (r.ok ? r.json() : { wallets: [], totalBalance: 0 }))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load wallets");
+        }
+        return r.json();
+      })
       .then((d) => {
         setWallets(d.wallets ?? []);
         setTotalBalance(d.totalBalance ?? 0);
       })
-      .catch(() => {})
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load wallets"))
       .finally(() => setRefreshingBalances(false));
     loadActivity();
   }, [loadActivity]);

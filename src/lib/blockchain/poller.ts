@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
@@ -126,7 +126,10 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
   const res = await fetch(url, {
     headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.warn(`[payment-poller] TronGrid API error ${res.status} for ${address}`);
+    return [];
+  }
 
   const data = await res.json();
   const required = getRequiredConfirmations("USDT", "TRC20");
@@ -167,9 +170,17 @@ async function pollEvm(
   }, chainId);
 
   const res = await fetch(url);
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.warn(`[payment-poller] Etherscan API error ${res.status} for ${network}/${address}`);
+    return [];
+  }
   const data = await res.json();
-  if (data.status !== "1") return [];
+  if (data.status !== "1") {
+    if (data.message && data.message !== "No transactions found") {
+      console.warn(`[payment-poller] Etherscan ${network} for ${address}: ${data.message}`);
+    }
+    return [];
+  }
 
   const decimals = getDecimals(currency, network);
 
@@ -266,7 +277,13 @@ async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
     return [];
   }
 
-  const sigs = await connection.getSignaturesForAddress(ata, { limit: 10 });
+  let sigs;
+  try {
+    sigs = await connection.getSignaturesForAddress(ata, { limit: 10 });
+  } catch (err) {
+    console.warn(`[payment-poller] Solana RPC error for ${ownerAddress}:`, err);
+    return [];
+  }
   const results: DetectedPayment[] = [];
 
   for (const sig of sigs.slice(0, 5)) {
@@ -366,9 +383,13 @@ export async function pollAllNetworks() {
   const targets = await getPollTargets();
   const detected: DetectedPayment[] = [];
 
-  const needsEtherscan = targets.some((t) => t.network === "ERC20");
+  const needsEtherscan = targets.some(
+    (t) => t.network === "ERC20" || isEvmUsdtNetwork(t.network)
+  );
   if (needsEtherscan && !process.env.ETHERSCAN_API_KEY) {
-    console.warn("[payment-poller] ETHERSCAN_API_KEY missing — ERC20 payments will not be detected");
+    console.warn(
+      "[payment-poller] ETHERSCAN_API_KEY missing — EVM USDT payments (BSC, Polygon, Arbitrum, Base, Avalanche) will not be detected"
+    );
   }
 
   for (const target of targets) {
@@ -570,7 +591,10 @@ async function processDetectedPayment(payment: DetectedPayment) {
         netAmount: String(netAmount),
         confirmations: String(payment.confirmations),
       })
+      .onConflictDoNothing({ target: transactions.txHash })
       .returning();
+
+    if (!tx) return;
 
     await dispatchWebhooks(link.userId, tx.id, "transaction.confirming");
 
@@ -622,7 +646,10 @@ async function processDetectedPayment(payment: DetectedPayment) {
       netAmount: String(netAmount),
       confirmations: String(payment.confirmations),
     })
+    .onConflictDoNothing({ target: transactions.txHash })
     .returning();
+
+  if (!tx) return;
 
   await dispatchWebhooks(wallet.userId, tx.id, "transaction.confirming");
 
@@ -642,21 +669,20 @@ async function processDetectedPayment(payment: DetectedPayment) {
 
 export async function completeTransaction(transactionId: string) {
   const [tx] = await db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.id, transactionId))
-    .limit(1);
+    .update(transactions)
+    .set({ status: "completed", updatedAt: new Date() })
+    .where(
+      and(
+        eq(transactions.id, transactionId),
+        inArray(transactions.status, ["confirming", "underpaid", "overpaid", "pending"])
+      )
+    )
+    .returning();
 
-  if (!tx || tx.status === "completed") return;
-  if (tx.status === "failed") return;
+  if (!tx) return;
 
   const net = Number(tx.netAmount ?? 0);
   const fee = Number(tx.feeAmount ?? 0);
-
-  await db
-    .update(transactions)
-    .set({ status: "completed", updatedAt: new Date() })
-    .where(eq(transactions.id, transactionId));
 
   let wallet: (typeof wallets.$inferSelect) | null = null;
 
@@ -689,10 +715,9 @@ export async function completeTransaction(transactionId: string) {
   }
 
   if (wallet) {
-    const newBalance = Number(wallet.balance) + net;
     await db
       .update(wallets)
-      .set({ balance: String(newBalance) })
+      .set({ balance: sql`${wallets.balance}::numeric + ${String(net)}` })
       .where(eq(wallets.id, wallet.id));
   }
 

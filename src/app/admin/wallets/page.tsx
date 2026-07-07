@@ -30,10 +30,36 @@ interface GasWalletStatus {
   explorerUrl: string | null;
 }
 
+interface SplGasWalletStatus {
+  configured: boolean;
+  address: string | null;
+  solBalance: number;
+  ready: boolean;
+  message: string;
+  explorerUrl: string | null;
+}
+
+interface EvmGasWalletStatus {
+  network: string;
+  label: string;
+  address: string;
+  nativeSymbol: string;
+  nativeBalance: number;
+  ready: boolean;
+  message: string;
+  explorerUrl: string | null;
+}
+
+interface GasWalletResponse {
+  tron: GasWalletStatus;
+  spl: SplGasWalletStatus;
+  evm: EvmGasWalletStatus[];
+}
+
 export default function AdminWalletsPage() {
   const { setOpen } = useAdminSidebar();
   const [wallets, setWallets] = useState<PlatformWallet[]>([]);
-  const [gasWallet, setGasWallet] = useState<GasWalletStatus | null>(null);
+  const [gasWallets, setGasWallets] = useState<GasWalletResponse | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [copiedGas, setCopiedGas] = useState(false);
@@ -66,7 +92,7 @@ export default function AdminWalletsPage() {
     ])
       .then(([platformData, gasData]) => {
         setWallets(platformData.data ?? []);
-        setGasWallet(gasData);
+        setGasWallets(gasData as GasWalletResponse);
       })
       .catch((err) => setError(err.message))
       .finally(() => setRefreshing(false));
@@ -152,17 +178,17 @@ export default function AdminWalletsPage() {
         )}
 
         <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          <strong>Fee wallets</strong> collect the 1.5% platform USDT. The <strong>gas wallet</strong> holds
-          a small TRX float for TRC20 transfers — network fees are charged to merchants on withdrawal, not
-          paid by the platform.
+          <strong>Fee wallets</strong> collect the 1.5% platform USDT. <strong>Gas wallets</strong> hold
+          small native-token floats (TRX, SOL, BNB, MATIC, etc.) for withdrawals — network fees are charged
+          to merchants on withdrawal, not paid by the platform.
         </p>
 
-        {gasWallet && (
+        {gasWallets?.tron && (
           <section
             className={`card mb-4 p-4 ${
-              gasWallet.ready
+              gasWallets.tron.ready
                 ? "border-drift-green/40"
-                : gasWallet.configured
+                : gasWallets.tron.configured
                   ? "border-amber-500/40"
                   : "border-drift-red/40"
             }`}
@@ -170,27 +196,24 @@ export default function AdminWalletsPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <h2 className="section-title">Tron Gas Wallet (TRX)</h2>
-                <p className="mt-1 text-2xs text-drift-muted">{gasWallet.message}</p>
-                {gasWallet.address ? (
+                <p className="mt-1 text-2xs text-drift-muted">{gasWallets.tron.message}</p>
+                {gasWallets.tron.address ? (
                   <>
-                    <p className="mt-3 break-all font-mono text-xs text-white">{gasWallet.address}</p>
+                    <p className="mt-3 break-all font-mono text-xs text-white">{gasWallets.tron.address}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-2xs">
                       <span className="text-white">
                         Balance:{" "}
                         <span
                           className={
-                            gasWallet.ready ? "font-semibold text-drift-green" : "font-semibold text-amber-400"
+                            gasWallets.tron.ready ? "font-semibold text-drift-green" : "font-semibold text-amber-400"
                           }
                         >
-                          {gasWallet.trxBalance.toFixed(2)} TRX
+                          {gasWallets.tron.trxBalance.toFixed(2)} TRX
                         </span>
                       </span>
-                      <span className="text-drift-muted">
-                        Merchant withdrawal fee covers TRX (~2 USDT on TRC20)
-                      </span>
-                      {gasWallet.explorerUrl && (
+                      {gasWallets.tron.explorerUrl && (
                         <a
-                          href={gasWallet.explorerUrl}
+                          href={gasWallets.tron.explorerUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-drift-purple hover:underline"
@@ -203,11 +226,11 @@ export default function AdminWalletsPage() {
                 ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
-                {gasWallet.address && (
+                {gasWallets.tron.address && (
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(gasWallet.address!);
+                      navigator.clipboard.writeText(gasWallets.tron.address!);
                       setCopiedGas(true);
                       setTimeout(() => setCopiedGas(false), 2000);
                     }}
@@ -218,13 +241,60 @@ export default function AdminWalletsPage() {
                 )}
               </div>
             </div>
-            {!gasWallet.ready && gasWallet.configured && gasWallet.address && (
+            {!gasWallets.tron.ready && gasWallets.tron.configured && gasWallets.tron.address && (
               <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                Send <strong>{gasWallet.minTrxRequired}+ TRX</strong> once to activate this wallet.
-                Each merchant withdrawal includes a network fee (2 USDT on TRC20) that covers TRX gas — you
-                should not need to top up often.
+                Send <strong>{gasWallets.tron.minTrxRequired}+ TRX</strong> to fund TRC20 withdrawals.
               </p>
             )}
+          </section>
+        )}
+
+        {gasWallets?.spl && (
+          <section
+            className={`card mb-4 p-4 ${
+              gasWallets.spl.ready
+                ? "border-drift-green/40"
+                : gasWallets.spl.configured
+                  ? "border-amber-500/40"
+                  : "border-drift-red/40"
+            }`}
+          >
+            <h2 className="section-title">Solana Gas Wallet (SOL)</h2>
+            <p className="mt-1 text-2xs text-drift-muted">{gasWallets.spl.message}</p>
+            {gasWallets.spl.address && (
+              <>
+                <p className="mt-3 break-all font-mono text-xs text-white">{gasWallets.spl.address}</p>
+                <p className="mt-2 text-2xs text-white">
+                  Balance:{" "}
+                  <span className={gasWallets.spl.ready ? "font-semibold text-drift-green" : "font-semibold text-amber-400"}>
+                    {gasWallets.spl.solBalance.toFixed(4)} SOL
+                  </span>
+                </p>
+              </>
+            )}
+          </section>
+        )}
+
+        {gasWallets?.evm && gasWallets.evm.length > 0 && (
+          <section className="card mb-4 p-4">
+            <h2 className="section-title mb-3">EVM Gas Wallets</h2>
+            <div className="space-y-3">
+              {gasWallets.evm.map((g) => (
+                <div
+                  key={g.network}
+                  className={`rounded border p-3 ${
+                    g.ready ? "border-drift-green/30" : "border-amber-500/30"
+                  }`}
+                >
+                  <p className="text-sm font-medium text-white">{g.label}</p>
+                  <p className="mt-1 text-2xs text-drift-muted">{g.message}</p>
+                  <p className="mt-2 break-all font-mono text-2xs text-drift-muted">{g.address}</p>
+                  <p className="mt-1 text-2xs text-white">
+                    Balance: {g.nativeBalance.toFixed(6)} {g.nativeSymbol}
+                  </p>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 

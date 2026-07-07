@@ -1,7 +1,7 @@
 import { Wallet, JsonRpcProvider, parseEther } from "ethers";
 import { etherscanV2Fetch, parseEtherscanV2Json } from "../blockchain/etherscan";
 import { derivePrivateKey, deriveDepositAddress } from "../wallet/derive";
-import { getEvmChain, getEvmRpcUrl, type EvmChainConfig } from "./chains";
+import { getEvmChain, getEvmRpcUrl, EVM_USDT_CHAINS, type EvmChainConfig } from "./chains";
 
 async function fetchNativeBalance(chain: EvmChainConfig, address: string): Promise<number> {
   const apiKey = process.env.ETHERSCAN_API_KEY;
@@ -102,4 +102,51 @@ export function getEvmGasWalletAddress(network: string): string | null {
   const chain = getEvmChain(network);
   if (!chain) return null;
   return getGasWalletAddress(chain);
+}
+
+export interface EvmGasWalletStatus {
+  network: string;
+  label: string;
+  address: string;
+  nativeSymbol: string;
+  nativeBalance: number;
+  ready: boolean;
+  message: string;
+}
+
+export async function getEvmGasWalletStatus(network: string): Promise<EvmGasWalletStatus | null> {
+  const chain = getEvmChain(network);
+  if (!chain) return null;
+
+  const address = getGasWalletAddress(chain);
+  const nativeBalance = await fetchNativeBalance(chain, address);
+  const ready = nativeBalance >= chain.nativeTopUp * 3;
+
+  let message: string;
+  if (nativeBalance < chain.nativeTopUp) {
+    message = `${chain.nativeSymbol} gas wallet needs funding for ${chain.label} withdrawals. Send ${chain.nativeSymbol} to ${address}`;
+  } else if (!ready) {
+    message = `${chain.label} gas wallet is low (${nativeBalance.toFixed(6)} ${chain.nativeSymbol}).`;
+  } else {
+    message = `${chain.label} gas wallet is ready.`;
+  }
+
+  return {
+    network: chain.network,
+    label: chain.label,
+    address,
+    nativeSymbol: chain.nativeSymbol,
+    nativeBalance,
+    ready,
+    message,
+  };
+}
+
+export async function getAllEvmGasWalletStatuses(): Promise<EvmGasWalletStatus[]> {
+  const statuses: EvmGasWalletStatus[] = [];
+  for (const chain of Object.values(EVM_USDT_CHAINS)) {
+    const status = await getEvmGasWalletStatus(chain.network);
+    if (status) statuses.push(status);
+  }
+  return statuses;
 }

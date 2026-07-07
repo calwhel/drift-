@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { USDT_NETWORKS, getNetworkLabel, type UsdtNetwork } from "@/lib/constants";
 
-const CURRENCIES = ["USDT", "BTC", "USDC", "ETH", "SOL"];
+const CURRENCIES = ["USDT"];
 const EXPIRY_OPTIONS: Record<string, number | null> = {
   "1 day": 1,
   "7 days": 7,
@@ -57,19 +57,33 @@ export default function PaymentLinksPage() {
   const [error, setError] = useState("");
   const [createdLink, setCreatedLink] = useState<PaymentLinkRow | null>(null);
 
+  const [loadError, setLoadError] = useState("");
+
   const loadLinks = () => {
     fetch("/api/payment-links")
-      .then((r) => (r.ok ? r.json() : []))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load payment links");
+        }
+        return r.json();
+      })
       .then(setLinks)
-      .catch(() => {});
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load payment links"));
   };
 
   useEffect(() => {
     loadLinks();
     fetch("/api/wallets")
-      .then((r) => (r.ok ? r.json() : { wallets: [] }))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load wallets");
+        }
+        return r.json();
+      })
       .then((d) => setWallets(d.wallets ?? []))
-      .catch(() => {});
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load wallets"));
   }, []);
 
   const walletsForCurrency = useMemo(() => {
@@ -168,6 +182,11 @@ export default function PaymentLinksPage() {
       />
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        {loadError && (
+          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         {error && (
           <p className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
             {error}

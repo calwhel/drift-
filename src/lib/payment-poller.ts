@@ -3,6 +3,7 @@ import { processPendingWebhooks } from "@/lib/webhooks";
 import { processPendingSettlements } from "@/lib/wallet/settlement";
 import { processPendingWithdrawals } from "@/lib/wallet/withdraw";
 import { processSubscriptionRenewals } from "@/lib/subscription-renewals";
+import { tryAcquirePollerLock, releasePollerLock } from "@/lib/poller-lock";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -37,6 +38,19 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
     };
   }
 
+  const lockAcquired = await tryAcquirePollerLock();
+  if (!lockAcquired) {
+    return {
+      ok: false,
+      detected: 0,
+      settlements: 0,
+      withdrawals: 0,
+      subscriptionRenewals: 0,
+      timestamp,
+      error: "Another instance is running the poll cycle",
+    };
+  }
+
   cycleRunning = true;
   try {
     const detected = await pollAllNetworks();
@@ -66,6 +80,9 @@ export async function runPaymentPollCycle(): Promise<PaymentPollResult> {
     };
   } finally {
     cycleRunning = false;
+    await releasePollerLock().catch((err) => {
+      console.warn("[payment-poller] Failed to release advisory lock:", err);
+    });
   }
 }
 

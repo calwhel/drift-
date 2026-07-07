@@ -65,17 +65,28 @@ export default function CheckoutPage() {
       });
   }, [shortcode]);
 
+  const [pollError, setPollError] = useState<string | null>(null);
+
   const pollStatus = useCallback(() => {
     fetch(`/api/payment-links/public/${shortcode}/status`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Could not check payment status");
+        }
+        return r.json();
+      })
       .then((data) => {
+        setPollError(null);
         if (!data?.status) return;
         setPaymentStatus(data.status);
         if (data.status === "completed" && data.redirect_url) {
           setTimeout(() => router.push(data.redirect_url), 2000);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        setPollError(err instanceof Error ? err.message : "Could not check payment status");
+      });
   }, [shortcode, router]);
 
   useEffect(() => {
@@ -260,6 +271,9 @@ export default function CheckoutPage() {
                   <p className="text-[12px] text-drift-muted">
                     Once we confirm your payment, you will be redirected automatically.
                   </p>
+                  {pollError && (
+                    <p className="mt-1 text-[12px] text-drift-red">{pollError}</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

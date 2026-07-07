@@ -74,7 +74,7 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     label: "USDT (Base)",
     nativeSymbol: "ETH",
     nativeDecimals: 18,
-    usdtContract: "0xfde4C96c8593936afEaa83C1e765A2A5771006e",
+    usdtContract: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
     usdtDecimals: 6,
     confirmations: 12,
     nativeTopUp: 0.0001,
