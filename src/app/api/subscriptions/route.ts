@@ -6,7 +6,7 @@ import { db, subscriptions, paymentLinks } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { getWalletForCurrencyAndNetwork } from "@/lib/wallet/helpers";
 import { resolveCheckoutDeposit } from "@/lib/wallet/checkout-deposit";
-import { defaultNetworkForCurrency } from "@/lib/constants";
+import { defaultNetworkForCurrency, disabledNetworkMessage, isMerchantNetworkEnabled } from "@/lib/constants";
 
 const createSchema = z.object({
   customer_email: z.string().email(),
@@ -40,6 +40,13 @@ export async function POST(req: NextRequest) {
     const data = createSchema.parse(body);
     const currency = data.currency.toUpperCase();
     const network = data.network ?? defaultNetworkForCurrency(currency);
+    const disabled = disabledNetworkMessage(network);
+    if (disabled || !isMerchantNetworkEnabled(currency, network)) {
+      return NextResponse.json(
+        { error: disabled ?? "This network is not supported." },
+        { status: 400 }
+      );
+    }
 
     const userWallet = await getWalletForCurrencyAndNetwork(auth.userId, currency, network);
     const checkout = await resolveCheckoutDeposit(currency, network, userWallet);

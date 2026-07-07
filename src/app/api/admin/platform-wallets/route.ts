@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db, platformWallets } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { validateWalletAddress } from "@/lib/wallet/generate";
-import { PLATFORM_WALLET_NETWORKS } from "@/lib/constants";
+import { PLATFORM_WALLET_NETWORKS, disabledNetworkMessage } from "@/lib/constants";
 import { fetchOnChainBalancesForWallets } from "@/lib/blockchain/balances";
 
 const walletSchema = z.object({
@@ -72,7 +72,11 @@ export async function POST(req: NextRequest) {
     (n) => n.currency === currency && n.network === network
   );
   if (!supported) {
-    return NextResponse.json({ error: "Unsupported currency/network" }, { status: 400 });
+    const disabled = disabledNetworkMessage(network);
+    return NextResponse.json(
+      { error: disabled ?? "Unsupported currency/network" },
+      { status: 400 }
+    );
   }
 
   const trimmedAddress = address.trim();
