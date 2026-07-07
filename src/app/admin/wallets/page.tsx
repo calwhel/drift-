@@ -153,7 +153,7 @@ export default function AdminWalletsPage() {
 
         <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
           <strong>Fee wallets</strong> collect the 1.5% platform USDT. The <strong>gas wallet</strong> holds
-          TRX only — it pays network fees to move USDT during fee sweeps. Fund the gas wallet with TRX (not USDT).
+          TRX only — it pays network fees when merchants withdraw USDT (not on every payment).
         </p>
 
         {gasWallet && (
@@ -185,7 +185,7 @@ export default function AdminWalletsPage() {
                         </span>
                       </span>
                       <span className="text-drift-muted">
-                        Need {gasWallet.minTrxRequired}+ TRX for fee sweeps
+                        TRX used on withdrawals (~6 TRX per transfer)
                       </span>
                       {gasWallet.explorerUrl && (
                         <a
@@ -219,9 +219,8 @@ export default function AdminWalletsPage() {
             </div>
             {!gasWallet.ready && gasWallet.configured && gasWallet.address && (
               <p className="mt-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                Send <strong>{gasWallet.minTrxRequired}+ TRX</strong> (Tron network coin) to the address above
-                from any exchange or wallet. Drift uses ~6 TRX per transfer to fund deposit addresses — keep
-                50+ TRX on hand if you have active payments.
+                Send <strong>{gasWallet.minTrxRequired}+ TRX</strong> (Tron network coin) to the address above.
+                Drift uses ~6 TRX per USDT withdrawal — payments no longer trigger on-chain sweeps.
               </p>
             )}
           </section>

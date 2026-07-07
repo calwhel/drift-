@@ -2,7 +2,9 @@ import { eq } from "drizzle-orm";
 import { db, withdrawals, wallets } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
-import { fundTronAddressIfNeeded } from "./tron-gas";
+import { derivePrivateKey } from "./derive";
+import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
+import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
 
 async function refundWithdrawalBalance(withdrawal: {
   walletId: string | null;
@@ -23,6 +25,87 @@ async function refundWithdrawalBalance(withdrawal: {
     .update(wallets)
     .set({ balance: String(restored) })
     .where(eq(wallets.id, withdrawal.walletId));
+}
+
+async function broadcastTrc20UsdtWithdrawal(
+  privateKey: string,
+  fromAddress: string,
+  toAddress: string,
+  amount: number
+): Promise<string> {
+  await fundTronAddressIfNeeded(fromAddress);
+  const txHash = await broadcastFromPrivateKey(
+    privateKey,
+    toAddress,
+    amount,
+    "USDT",
+    "TRC20"
+  );
+  await reclaimTronTrxToGasWallet(privateKey, fromAddress);
+  return txHash;
+}
+
+async function processTrc20UsdtWithdrawal(
+  withdrawal: { toAddress: string; amount: string },
+  wallet: typeof wallets.$inferSelect,
+  privateKey: string
+): Promise<string> {
+  const amount = Number(withdrawal.amount);
+  let remaining = amount;
+  const txHashes: string[] = [];
+
+  const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
+  const custodialBalance = custodial.amount ?? 0;
+
+  if (custodialBalance > 0.000001) {
+    const sendAmount = Math.min(custodialBalance, remaining);
+    const hash = await broadcastTrc20UsdtWithdrawal(
+      privateKey,
+      wallet.address,
+      withdrawal.toAddress,
+      sendAmount
+    );
+    txHashes.push(hash);
+    remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+  }
+
+  if (remaining > 0.000001) {
+    const depositSources = await findTrc20DepositSourcesWithBalance(
+      wallet.userId,
+      wallet.id
+    );
+    const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+
+    if (custodialBalance + depositTotal + 0.000001 < amount) {
+      throw new Error(
+        `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${amount.toFixed(4)}). ` +
+          "Funds may still be confirming — wait a few minutes and retry."
+      );
+    }
+
+    for (const source of depositSources) {
+      if (remaining <= 0.000001) break;
+
+      const sendAmount = Math.min(source.balance, remaining);
+      const depositKey = derivePrivateKey(source.derivationIndex, "TRC20");
+      const hash = await broadcastTrc20UsdtWithdrawal(
+        depositKey,
+        source.address,
+        withdrawal.toAddress,
+        sendAmount
+      );
+      txHashes.push(hash);
+      remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+    }
+  }
+
+  if (remaining > 0.000001) {
+    throw new Error(
+      `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+    );
+  }
+
+  return txHashes.join(",");
 }
 
 export async function processPendingWithdrawals(): Promise<number> {
@@ -73,29 +156,19 @@ export async function processPendingWithdrawals(): Promise<number> {
         continue;
       }
 
-      const amount = Number(withdrawal.amount);
+      let txHash: string;
 
       if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
-        await fundTronAddressIfNeeded(wallet.address);
-
-        const onChain = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
-        const available = onChain.amount ?? 0;
-
-        if (available + 0.000001 < amount) {
-          throw new Error(
-            `Insufficient on-chain USDT in wallet (have ${available.toFixed(4)}, need ${amount.toFixed(4)}). ` +
-              "Funds may still be sweeping from payment links — wait a few minutes and retry."
-          );
-        }
+        txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
+      } else {
+        txHash = await broadcastFromPrivateKey(
+          privateKey,
+          withdrawal.toAddress,
+          Number(withdrawal.amount),
+          withdrawal.currency,
+          withdrawal.network
+        );
       }
-
-      const txHash = await broadcastFromPrivateKey(
-        privateKey,
-        withdrawal.toAddress,
-        amount,
-        withdrawal.currency,
-        withdrawal.network
-      );
 
       await db
         .update(withdrawals)
