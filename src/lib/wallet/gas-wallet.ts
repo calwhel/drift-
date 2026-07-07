@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, gasWallets } from "../db";
+import { fetchTronAccount } from "@/lib/blockchain/trongrid";
 import { deriveDepositAddress, derivePrivateKey } from "./derive";
 import { isMasterWalletConfigured } from "./master-wallet";
 
@@ -25,14 +26,12 @@ export interface TronGasWalletStatus {
 }
 
 export async function fetchTronTrxBalanceSun(address: string): Promise<number> {
-  const apiKey = process.env.TRONGRID_API_KEY;
-  const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`, {
-    headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
-  });
-  if (!res.ok) return 0;
-
-  const data = (await res.json()) as { data?: Array<{ balance?: number }> };
-  return data.data?.[0]?.balance ?? 0;
+  try {
+    const account = await fetchTronAccount(address);
+    return account?.balance ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function fetchTronTrxBalance(address: string): Promise<number> {
@@ -40,13 +39,12 @@ export async function fetchTronTrxBalance(address: string): Promise<number> {
 }
 
 export async function isTronAccountActivated(address: string): Promise<boolean> {
-  const apiKey = process.env.TRONGRID_API_KEY;
-  const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`, {
-    headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
-  });
-  if (!res.ok) return false;
-  const data = (await res.json()) as { data?: unknown[] };
-  return Array.isArray(data.data) && data.data.length > 0;
+  try {
+    const account = await fetchTronAccount(address);
+    return account != null;
+  } catch {
+    return false;
+  }
 }
 
 export function getTronGasDerivationIndex(): number {

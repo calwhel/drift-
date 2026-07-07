@@ -1,45 +1,65 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, paymentLinks } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { deriveDepositAddress } from "./derive";
 
 export interface SplDepositSource {
-  derivationIndex: number;
+  derivationIndex: number | null;
   address: string;
   balance: number;
 }
 
-/** Deposit addresses that still hold USDT from payment links (ledger-only settlement mode). */
+const BALANCE_FETCH_DELAY_MS = 200;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export async function findSplDepositSourcesWithBalance(
-  userId: string,
-  walletId: string
+  userId: string
 ): Promise<SplDepositSource[]> {
   const links = await db
-    .select({ derivationIndex: paymentLinks.derivationIndex })
+    .select({
+      derivationIndex: paymentLinks.derivationIndex,
+      depositAddress: paymentLinks.depositAddress,
+    })
     .from(paymentLinks)
     .where(
       and(
         eq(paymentLinks.userId, userId),
-        eq(paymentLinks.walletId, walletId),
         eq(paymentLinks.currency, "USDT"),
-        eq(paymentLinks.network, "SPL"),
-        isNotNull(paymentLinks.derivationIndex)
+        eq(paymentLinks.network, "SPL")
       )
     );
 
-  const indexes = Array.from(
-    new Set(
-      links
-        .map((l) => l.derivationIndex)
-        .filter((i): i is number => i != null)
-    )
-  );
+  const addressMap = new Map<string, number | null>();
+
+  for (const link of links) {
+    const address =
+      link.depositAddress?.trim() ||
+      (link.derivationIndex != null
+        ? deriveDepositAddress(link.derivationIndex, "USDT", "SPL")
+        : null);
+    if (!address) continue;
+
+    if (!addressMap.has(address)) {
+      addressMap.set(address, link.derivationIndex ?? null);
+    }
+  }
 
   const sources: SplDepositSource[] = [];
+  let i = 0;
 
-  for (const derivationIndex of indexes) {
-    const address = deriveDepositAddress(derivationIndex, "USDT", "SPL");
+  for (const [address, derivationIndex] of Array.from(addressMap.entries())) {
+    if (i++ > 0) await sleep(BALANCE_FETCH_DELAY_MS);
+
     const onChain = await fetchOnChainBalance(address, "USDT", "SPL");
+    if (onChain.error) {
+      throw new Error(
+        `Could not verify on-chain balance for deposit ${address.slice(0, 8)}… (${onChain.error}). Try again in a minute.`
+      );
+    }
+
     const balance = onChain.amount ?? 0;
     if (balance > 0.000001) {
       sources.push({ derivationIndex, address, balance });

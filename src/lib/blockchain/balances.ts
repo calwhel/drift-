@@ -1,6 +1,10 @@
 import { getDecimals, TOKEN_CONTRACTS } from "../constants";
 import { blockstreamFetch, logBlockstreamError } from "./blockstream";
 import { etherscanV2Fetch, parseEtherscanV2Json } from "./etherscan";
+import {
+  fetchTronAccount,
+  parseTrc20BalanceFromAccount,
+} from "./trongrid";
 import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 
@@ -14,43 +18,10 @@ export interface OnChainWalletBalance {
 
 const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
 
-function tronHeaders(): Record<string, string> {
-  const apiKey = process.env.TRONGRID_API_KEY;
-  return apiKey ? { "TRON-PRO-API-KEY": apiKey } : {};
-}
-
-async function fetchTronAccount(address: string) {
-  const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`, {
-    headers: tronHeaders(),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`TronGrid HTTP ${res.status}`);
-  }
-  const body = (await res.json()) as {
-    data?: Array<{
-      balance?: number;
-      trc20?: Array<Record<string, string>>;
-    }>;
-  };
-  return body.data?.[0];
-}
-
-function parseTrc20Balance(account: { trc20?: Array<Record<string, string>> } | undefined, contract: string): number {
-  for (const entry of account?.trc20 ?? []) {
-    for (const [token, value] of Object.entries(entry)) {
-      if (token === contract) {
-        return Number(value) / 1e6;
-      }
-    }
-  }
-  return 0;
-}
-
 async function fetchTrc20UsdtBalance(address: string): Promise<OnChainWalletBalance> {
   try {
     const account = await fetchTronAccount(address);
-    const amount = parseTrc20Balance(account, USDT_TRC20);
+    const amount = parseTrc20BalanceFromAccount(account, USDT_TRC20);
     const trx = (account?.balance ?? 0) / 1e6;
     return {
       amount,
