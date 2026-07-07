@@ -80,7 +80,8 @@ export default function AdminTransactionsPage() {
 
         <p className="mb-4 text-xs text-drift-muted">
           Funds are never deleted from the blockchain — they sit at the deposit address until credited to the merchant
-          ledger on completion. Cancel false underpaid rows; complete verified payments that were stuck.
+          Use Cancel for mistaken or duplicate payments. Underpaid payments complete automatically
+          and credit the merchant for the amount received on-chain.
         </p>
 
         <div className="card overflow-x-auto">
