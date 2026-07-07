@@ -48,7 +48,7 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeTopUp: 0.05,
     nativeReserve: 0.01,
     rpcEnv: "POLYGON_RPC_URL",
-    defaultRpc: "https://polygon-rpc.com",
+    defaultRpc: "https://polygon-bor-rpc.publicnode.com",
     explorerAddress: (a) => `https://polygonscan.com/address/${a}`,
     gasDerivationIndex: 201,
   },

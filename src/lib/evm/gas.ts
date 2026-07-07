@@ -1,24 +1,33 @@
-import { Wallet, JsonRpcProvider, parseEther } from "ethers";
+import { Wallet, parseEther } from "ethers";
 import { etherscanV2Fetch, parseEtherscanV2Json } from "../blockchain/etherscan";
 import { derivePrivateKey, deriveDepositAddress } from "../wallet/derive";
-import { getEvmChain, getEvmRpcUrl, EVM_USDT_CHAINS, type EvmChainConfig } from "./chains";
+import { getEvmChain, EVM_USDT_CHAINS, type EvmChainConfig } from "./chains";
+import { withEvmRpc } from "./rpc";
 
 async function fetchNativeBalance(chain: EvmChainConfig, address: string): Promise<number> {
   const apiKey = process.env.ETHERSCAN_API_KEY;
-  if (!apiKey) return 0;
+  if (apiKey) {
+    try {
+      const res = await etherscanV2Fetch(
+        apiKey,
+        { module: "account", action: "balance", address, tag: "latest" },
+        chain.chainId
+      );
+      const result = await parseEtherscanV2Json<string>(res);
+      return Number(result ?? 0) / Math.pow(10, chain.nativeDecimals);
+    } catch (err) {
+      console.warn(`[evm-gas] Etherscan balance failed for ${chain.network}:`, err);
+    }
+  }
 
   try {
-    const res = await etherscanV2Fetch(
-      apiKey,
-      { module: "account", action: "balance", address, tag: "latest" },
-      chain.chainId
-    );
-    const result = await parseEtherscanV2Json<string>(res);
-    return Number(result ?? 0) / Math.pow(10, chain.nativeDecimals);
-  } catch {
-    const provider = new JsonRpcProvider(getEvmRpcUrl(chain));
-    const balance = await provider.getBalance(address);
-    return Number(balance) / Math.pow(10, chain.nativeDecimals);
+    return await withEvmRpc(chain, async (provider) => {
+      const balance = await provider.getBalance(address);
+      return Number(balance) / Math.pow(10, chain.nativeDecimals);
+    });
+  } catch (err) {
+    console.warn(`[evm-gas] RPC balance failed for ${chain.network} ${address}:`, err);
+    return 0;
   }
 }
 
@@ -36,15 +45,16 @@ async function sendNativeToken(
   toAddress: string,
   amountNative: number
 ): Promise<string> {
-  const provider = new JsonRpcProvider(getEvmRpcUrl(chain));
-  const pk = fromPrivateKey.startsWith("0x") ? fromPrivateKey : `0x${fromPrivateKey}`;
-  const signer = new Wallet(pk, provider);
-  const tx = await signer.sendTransaction({
-    to: toAddress,
-    value: parseEther(amountNative.toFixed(12)),
+  return withEvmRpc(chain, async (provider) => {
+    const pk = fromPrivateKey.startsWith("0x") ? fromPrivateKey : `0x${fromPrivateKey}`;
+    const signer = new Wallet(pk, provider);
+    const tx = await signer.sendTransaction({
+      to: toAddress,
+      value: parseEther(amountNative.toFixed(12)),
+    });
+    const receipt = await tx.wait();
+    return receipt!.hash;
   });
-  const receipt = await tx.wait();
-  return receipt!.hash;
 }
 
 /** Top up deposit address with native gas from the chain gas wallet (master mnemonic). */
@@ -112,6 +122,7 @@ export interface EvmGasWalletStatus {
   nativeBalance: number;
   ready: boolean;
   message: string;
+  balanceError?: string;
 }
 
 export async function getEvmGasWalletStatus(network: string): Promise<EvmGasWalletStatus | null> {
@@ -119,11 +130,21 @@ export async function getEvmGasWalletStatus(network: string): Promise<EvmGasWall
   if (!chain) return null;
 
   const address = getGasWalletAddress(chain);
-  const nativeBalance = await fetchNativeBalance(chain, address);
+  let nativeBalance = 0;
+  let balanceError: string | undefined;
+
+  try {
+    nativeBalance = await fetchNativeBalance(chain, address);
+  } catch (err) {
+    balanceError = err instanceof Error ? err.message : "Could not fetch balance";
+  }
+
   const ready = nativeBalance >= chain.nativeTopUp * 3;
 
   let message: string;
-  if (nativeBalance < chain.nativeTopUp) {
+  if (balanceError) {
+    message = `Could not read ${chain.label} gas balance — set ${chain.rpcEnv} in Railway or check ETHERSCAN_API_KEY.`;
+  } else if (nativeBalance < chain.nativeTopUp) {
     message = `${chain.nativeSymbol} gas wallet needs funding for ${chain.label} withdrawals. Send ${chain.nativeSymbol} to ${address}`;
   } else if (!ready) {
     message = `${chain.label} gas wallet is low (${nativeBalance.toFixed(6)} ${chain.nativeSymbol}).`;
@@ -139,6 +160,7 @@ export async function getEvmGasWalletStatus(network: string): Promise<EvmGasWall
     nativeBalance,
     ready,
     message,
+    balanceError,
   };
 }
 
