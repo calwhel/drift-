@@ -141,7 +141,7 @@ export async function getTronGasWalletStatus(): Promise<TronGasWalletStatus> {
   } else if (trxBalance < MIN_GAS_TRX_WARNING) {
     message = `Gas wallet is active but low on TRX (${trxBalance.toFixed(2)} TRX). Send more TRX to keep sweeps and withdrawals running.`;
   } else {
-    message = "Gas wallet is ready for TRC20 transfers.";
+    message = "Gas wallet is ready for TRC20 withdrawals.";
   }
 
   return {

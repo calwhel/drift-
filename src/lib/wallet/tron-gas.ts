@@ -63,6 +63,27 @@ export async function fundTronAddressIfNeeded(toAddress: string): Promise<void> 
   await sendTronTrx(gasKey, toAddress, sendTrx);
 }
 
+const TRX_RECLAIM_RESERVE = 1;
+
+/** Return leftover TRX from a deposit address to the gas wallet after a USDT transfer. */
+export async function reclaimTronTrxToGasWallet(
+  fromPrivateKey: string,
+  fromAddress: string
+): Promise<void> {
+  const gasRecord = await getTronGasWalletRecord();
+  if (!gasRecord?.address || fromAddress === gasRecord.address) return;
+
+  const balanceTrx = await fetchTronTrxBalance(fromAddress);
+  const reclaimable = balanceTrx - TRX_RECLAIM_RESERVE;
+  if (reclaimable < 0.5) return;
+
+  try {
+    await sendTronTrx(fromPrivateKey, gasRecord.address, reclaimable);
+  } catch (err) {
+    console.warn(`[tron-gas] TRX reclaim from ${fromAddress} failed:`, err);
+  }
+}
+
 export function getTronSourceAddress(
   fromDerivationIndex: number | null,
   currency: string,

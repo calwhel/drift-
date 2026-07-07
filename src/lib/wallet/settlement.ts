@@ -28,12 +28,11 @@ export async function queueSettlements(
   const merchantAddress = sourceWallet?.address;
   const feeWallet = await getPlatformFeeAddress(currency, network);
   const isGenerated = sourceWallet?.walletType === "generated";
+  /** TRC20 USDT stays on deposit addresses until withdrawal — avoids 2 on-chain sweeps per payment (~12+ TRX). */
+  const trc20LedgerOnly = network === "TRC20" && currency === "USDT";
 
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
     if (isGenerated) {
-      const sweepNetOnChain =
-        network === "TRC20" && currency === "USDT" && derivationIndex != null && netAmount > 0;
-
       await db.insert(settlements).values({
         transactionId,
         userId,
@@ -44,7 +43,7 @@ export async function queueSettlements(
         toAddress: merchantAddress,
         walletId: sourceWallet!.id,
         fromDerivationIndex: derivationIndex,
-        status: sweepNetOnChain ? "pending" : "ledger_settled",
+        status: "ledger_settled",
       });
     } else {
       if (derivationIndex != null && netAmount > 0) {
@@ -77,7 +76,20 @@ export async function queueSettlements(
     }
   }
 
-  if (feeAmount > 0 && feeWallet && isGenerated && sourceWallet?.encryptedPrivateKey) {
+  if (feeAmount > 0 && trc20LedgerOnly && feeWallet) {
+    await db.insert(settlements).values({
+      transactionId,
+      userId,
+      type: "platform_fee",
+      amount: String(feeAmount),
+      currency,
+      network,
+      toAddress: feeWallet,
+      walletId: walletId,
+      fromDerivationIndex: derivationIndex,
+      status: "ledger_settled",
+    });
+  } else if (feeAmount > 0 && feeWallet && isGenerated && sourceWallet?.encryptedPrivateKey) {
     await db.insert(settlements).values({
       transactionId,
       userId,
