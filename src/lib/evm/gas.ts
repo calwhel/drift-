@@ -5,6 +5,16 @@ import { getEvmChain, EVM_USDT_CHAINS, type EvmChainConfig } from "./chains";
 import { withEvmRpc } from "./rpc";
 
 async function fetchNativeBalance(chain: EvmChainConfig, address: string): Promise<number> {
+  // Prefer public RPC fallbacks — works with zero extra env vars.
+  try {
+    return await withEvmRpc(chain, async (provider) => {
+      const balance = await provider.getBalance(address);
+      return Number(balance) / Math.pow(10, chain.nativeDecimals);
+    });
+  } catch (rpcErr) {
+    console.warn(`[evm-gas] RPC balance failed for ${chain.network} ${address}:`, rpcErr);
+  }
+
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (apiKey) {
     try {
@@ -20,15 +30,7 @@ async function fetchNativeBalance(chain: EvmChainConfig, address: string): Promi
     }
   }
 
-  try {
-    return await withEvmRpc(chain, async (provider) => {
-      const balance = await provider.getBalance(address);
-      return Number(balance) / Math.pow(10, chain.nativeDecimals);
-    });
-  } catch (err) {
-    console.warn(`[evm-gas] RPC balance failed for ${chain.network} ${address}:`, err);
-    return 0;
-  }
+  return 0;
 }
 
 function getGasWalletPrivateKey(chain: EvmChainConfig): string {
@@ -143,7 +145,7 @@ export async function getEvmGasWalletStatus(network: string): Promise<EvmGasWall
 
   let message: string;
   if (balanceError) {
-    message = `Could not read ${chain.label} gas balance — set ${chain.rpcEnv} in Railway or check ETHERSCAN_API_KEY.`;
+    message = `Could not read ${chain.label} gas balance — public RPC endpoints may be temporarily unavailable.`;
   } else if (nativeBalance < chain.nativeTopUp) {
     message = `${chain.nativeSymbol} gas wallet needs funding for ${chain.label} withdrawals. Send ${chain.nativeSymbol} to ${address}`;
   } else if (!ready) {
