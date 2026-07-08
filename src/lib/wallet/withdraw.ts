@@ -7,7 +7,7 @@ import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
 import { isTronRateLimitError } from "../blockchain/trongrid";
 import { findEvmDepositSourcesWithBalance } from "../evm/deposits";
 import { findSplDepositSourcesWithBalance } from "./spl-deposits";
-import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
+import { fundTronAddressIfNeeded, isTronGasWalletError, reclaimTronTrxToGasWallet } from "./tron-gas";
 import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
 import { fundSolIfNeeded } from "./spl-gas";
 import { isStablecoin } from "../constants";
@@ -450,8 +450,35 @@ async function processSplUsdtWithdrawal(
 
 function isRetryableWithdrawalError(err: unknown): boolean {
   if (isTronRateLimitError(err)) return true;
+  if (isTronGasWalletError(err)) return true;
   const msg = err instanceof Error ? err.message : String(err);
-  return /429|rate limit|too many requests|try again in a minute/i.test(msg);
+  return (
+    /429|rate limit|too many requests|try again in a minute|gas wallet needs more TRX|Funds may still be confirming/i.test(
+      msg
+    )
+  );
+}
+
+/** Re-queue failed withdrawals that hit transient errors and were not refunded. */
+async function repairRetryableFailedWithdrawals(): Promise<void> {
+  const failed = await db
+    .select()
+    .from(withdrawals)
+    .where(eq(withdrawals.status, "failed"));
+
+  for (const w of failed) {
+    if (w.balanceRefundedAt) continue;
+    const err = w.error ?? "";
+    if (
+      !/gas wallet needs more TRX|429|rate limit|too many requests|Funds may still be confirming/i.test(err)
+    ) {
+      continue;
+    }
+    await db
+      .update(withdrawals)
+      .set({ status: "pending", error: err })
+      .where(eq(withdrawals.id, w.id));
+  }
 }
 
 function isConfirmationPendingError(err: unknown): boolean {
@@ -559,6 +586,7 @@ export async function refundWithdrawalById(withdrawalId: string): Promise<number
 export async function processPendingWithdrawals(): Promise<number> {
   await repairInvalidCompletedWithdrawals();
   await repairUnrefundedFailedWithdrawals();
+  await repairRetryableFailedWithdrawals();
 
   const pending = await db
     .select()
@@ -681,7 +709,8 @@ export async function processPendingWithdrawals(): Promise<number> {
         await db
           .update(withdrawals)
           .set({
-            error: err instanceof Error ? err.message : "TronGrid rate limit — will retry",
+            status: "pending",
+            error: err instanceof Error ? err.message : "Temporary error — will retry",
           })
           .where(eq(withdrawals.id, withdrawal.id));
         continue;
