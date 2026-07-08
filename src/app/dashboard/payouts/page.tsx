@@ -17,6 +17,8 @@ interface Withdrawal {
   status: string;
   txHash?: string | null;
   error?: string | null;
+  balanceRefundedAt?: string | null;
+  balanceRefundedAmount?: string | null;
   createdAt: string;
 }
 
@@ -237,6 +239,12 @@ export default function PayoutsPage() {
                         <StatusBadge status={statusMap[w.status] ?? "Pending"} />
                         {w.status === "failed" && w.error ? (
                           <p className="mt-1 max-w-[200px] text-[10px] text-drift-red">{w.error}</p>
+                        ) : null}
+                        {w.balanceRefundedAt ? (
+                          <p className="mt-1 text-[10px] text-brand-400">
+                            Ledger restored: {Number(w.balanceRefundedAmount ?? w.amount).toFixed(4)}{" "}
+                            {w.currency}
+                          </p>
                         ) : null}
                         {w.status === "pending" && w.error ? (
                           <p className="mt-1 max-w-[200px] text-[10px] text-amber-400">{w.error}</p>
