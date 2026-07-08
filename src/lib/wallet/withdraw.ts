@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, isNull, and, or, like } from "drizzle-orm";
 import { db, withdrawals, wallets } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
@@ -67,14 +67,20 @@ async function appendWithdrawalTxHash(
 }
 
 async function refundWithdrawalBalance(
-  withdrawal: { walletId: string | null; amount: string },
+  withdrawal: {
+    id: string;
+    walletId: string | null;
+    amount: string;
+    balanceRefundedAt?: Date | null;
+  },
   netSent = 0
-): Promise<void> {
-  if (!withdrawal.walletId) return;
+): Promise<number> {
+  if (!withdrawal.walletId) return 0;
+  if (withdrawal.balanceRefundedAt) return 0;
 
   const gross = Number(withdrawal.amount);
   const refund = Math.round((gross - netSent) * 1e6) / 1e6;
-  if (refund <= 0) return;
+  if (refund <= 0) return 0;
 
   const [wallet] = await db
     .select({ balance: wallets.balance })
@@ -82,7 +88,7 @@ async function refundWithdrawalBalance(
     .where(eq(wallets.id, withdrawal.walletId))
     .limit(1);
 
-  if (!wallet) return;
+  if (!wallet) return 0;
 
   await db
     .update(wallets)
@@ -90,7 +96,23 @@ async function refundWithdrawalBalance(
       balance: sql`${wallets.balance}::numeric + ${String(refund)}`,
     })
     .where(eq(wallets.id, withdrawal.walletId));
+
+  await db
+    .update(withdrawals)
+    .set({
+      balanceRefundedAt: new Date(),
+      balanceRefundedAmount: String(refund),
+    })
+    .where(eq(withdrawals.id, withdrawal.id));
+
+  return refund;
 }
+
+const RESTORED_BALANCE_MSG =
+  "Withdrawal could not be completed. Your Drift wallet balance has been restored — please submit a new withdrawal.";
+
+const FALSE_COMPLETE_MSG =
+  "Withdrawal was marked complete without a confirmed on-chain payout. Your Drift wallet balance has been restored — please submit a new withdrawal.";
 
 async function broadcastTrc20UsdtWithdrawal(
   privateKey: string,
@@ -463,15 +485,15 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
 
     if (!invalid) continue;
 
-    if (w.walletId) {
-      await refundWithdrawalBalance(w);
-    }
+    const refunded = await refundWithdrawalBalance(w);
     await db
       .update(withdrawals)
       .set({
         status: "failed",
         error:
-          "Withdrawal was marked complete without a confirmed on-chain payout. Your balance has been restored — please submit a new withdrawal.",
+          refunded > 0
+            ? FALSE_COMPLETE_MSG
+            : "Withdrawal was marked complete without a confirmed on-chain payout. Contact support to restore your balance.",
       })
       .where(eq(withdrawals.id, w.id));
     repaired++;
@@ -480,8 +502,53 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
   return repaired;
 }
 
+/** Retry ledger refunds for failed withdrawals that claimed balance was restored but never credited. */
+async function repairUnrefundedFailedWithdrawals(): Promise<number> {
+  const stuck = await db
+    .select()
+    .from(withdrawals)
+    .where(
+      and(
+        eq(withdrawals.status, "failed"),
+        isNull(withdrawals.balanceRefundedAt),
+        or(
+          like(withdrawals.error, "%balance has been restored%"),
+          like(withdrawals.error, "%Balance has been restored%")
+        )
+      )
+    );
+
+  let repaired = 0;
+
+  for (const w of stuck) {
+    const refunded = await refundWithdrawalBalance(w);
+    if (refunded > 0) {
+      await db
+        .update(withdrawals)
+        .set({ error: FALSE_COMPLETE_MSG })
+        .where(eq(withdrawals.id, w.id));
+      repaired++;
+    }
+  }
+
+  return repaired;
+}
+
+export async function refundWithdrawalById(withdrawalId: string): Promise<number> {
+  const [w] = await db
+    .select()
+    .from(withdrawals)
+    .where(eq(withdrawals.id, withdrawalId))
+    .limit(1);
+
+  if (!w) throw new Error("Withdrawal not found");
+  if (w.status === "completed") throw new Error("Cannot refund a completed withdrawal");
+  return refundWithdrawalBalance(w);
+}
+
 export async function processPendingWithdrawals(): Promise<number> {
   await repairInvalidCompletedWithdrawals();
+  await repairUnrefundedFailedWithdrawals();
 
   const pending = await db
     .select()
@@ -513,20 +580,32 @@ export async function processPendingWithdrawals(): Promise<number> {
         .limit(1);
 
       if (!wallet || wallet.walletType !== "generated") {
-        await refundWithdrawalBalance(withdrawal);
+        const refunded = await refundWithdrawalBalance(withdrawal);
         await db
           .update(withdrawals)
-          .set({ status: "failed", error: "Invalid custodial wallet" })
+          .set({
+            status: "failed",
+            error:
+              refunded > 0
+                ? RESTORED_BALANCE_MSG
+                : "Invalid custodial wallet — contact support to restore balance",
+          })
           .where(eq(withdrawals.id, withdrawal.id));
         continue;
       }
 
       const privateKey = getPrivateKeyFromWallet(wallet.encryptedPrivateKey);
       if (!privateKey) {
-        await refundWithdrawalBalance(withdrawal);
+        const refunded = await refundWithdrawalBalance(withdrawal);
         await db
           .update(withdrawals)
-          .set({ status: "failed", error: "Missing wallet private key" })
+          .set({
+            status: "failed",
+            error:
+              refunded > 0
+                ? RESTORED_BALANCE_MSG
+                : "Missing wallet private key — contact support to restore balance",
+          })
           .where(eq(withdrawals.id, withdrawal.id));
         continue;
       }
@@ -598,12 +677,17 @@ export async function processPendingWithdrawals(): Promise<number> {
         continue;
       }
 
-      await refundWithdrawalBalance(withdrawal, netSent);
+      const refunded = await refundWithdrawalBalance(withdrawal, netSent);
       await db
         .update(withdrawals)
         .set({
           status: "failed",
-          error: err instanceof Error ? err.message : "Withdrawal broadcast failed",
+          error:
+            refunded > 0
+              ? `${err instanceof Error ? err.message : "Withdrawal broadcast failed"}. ${RESTORED_BALANCE_MSG}`
+              : err instanceof Error
+                ? err.message
+                : "Withdrawal broadcast failed",
         })
         .where(eq(withdrawals.id, withdrawal.id));
     }
