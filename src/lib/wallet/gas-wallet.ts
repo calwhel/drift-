@@ -8,13 +8,16 @@ import { TRON_GAS_DERIVATION_INDEX } from "../derivation-indices";
 export const TRON_GAS_NETWORK = "TRC20";
 
 /** Target TRX on a deposit address before one TRC20 transfer (~5–8 TRX typical burn) */
-export const TRX_TOP_UP_TARGET = 6;
+export const TRX_TOP_UP_TARGET = 5;
 
 /** Admin UI: recommend topping up gas wallet below this */
 export const MIN_GAS_TRX_WARNING = 15;
 
-/** Minimum TRX in gas wallet to send one funding transaction */
-export const MIN_GAS_TRX_OPERATION = 2;
+/** Minimum TRX left on gas wallet after sending a top-up (covers the TRX transfer fee) */
+export const MIN_GAS_TRX_OPERATION = 1.1;
+
+/** Minimum TRX on a sending address to attempt a TRC20 transfer without topping up */
+export const MIN_TRX_FOR_TRC20_TRANSFER = 3;
 
 export interface TronGasWalletStatus {
   configured: boolean;
@@ -170,6 +173,10 @@ export async function assertTronGasWalletCanSend(amountTrx: number): Promise<str
 
   const required = amountTrx + MIN_GAS_TRX_OPERATION;
   if (status.trxBalance < required) {
+    const affordable = Math.max(status.trxBalance - MIN_GAS_TRX_OPERATION, 0);
+    if (affordable >= 0.5 && affordable >= amountTrx * 0.5) {
+      return status.address;
+    }
     throw new Error(
       `Tron gas wallet needs more TRX (has ${status.trxBalance.toFixed(2)}, need ~${required.toFixed(1)} for this transfer). Send TRX to ${status.address}.`
     );
