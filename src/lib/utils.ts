@@ -45,3 +45,26 @@ export function blockExplorerAddressUrl(address: string, network: string): strin
     }
   }
 }
+
+export function blockExplorerTxUrl(txHash: string, network: string): string {
+  const hash = txHash.split(",")[0]?.trim() ?? txHash;
+  switch (network) {
+    case "TRC20":
+      return `https://tronscan.org/#/transaction/${hash}`;
+    case "ERC20":
+      return `https://etherscan.io/tx/${hash}`;
+    case "SPL":
+    case "Solana":
+      return `https://solscan.io/tx/${hash}`;
+    case "Bitcoin":
+      return `https://blockstream.info/tx/${hash}`;
+    default: {
+      const chain = getEvmChain(network);
+      if (chain) {
+        const base = chain.explorerAddress("0x0").replace(/\/address\/0x0$/, "");
+        return `${base}/tx/${hash}`;
+      }
+      return `https://etherscan.io/tx/${hash}`;
+    }
+  }
+}

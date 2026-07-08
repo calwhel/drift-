@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { StatusBadge } from "@/components/status-badge";
 import { getNetworkLabel } from "@/lib/constants";
+import { blockExplorerTxUrl } from "@/lib/utils";
 
 interface Withdrawal {
   id: string;
@@ -14,6 +15,7 @@ interface Withdrawal {
   network: string;
   toAddress: string;
   status: string;
+  txHash?: string | null;
   error?: string | null;
   createdAt: string;
 }
@@ -235,6 +237,19 @@ export default function PayoutsPage() {
                         <StatusBadge status={statusMap[w.status] ?? "Pending"} />
                         {w.status === "failed" && w.error ? (
                           <p className="mt-1 max-w-[200px] text-[10px] text-drift-red">{w.error}</p>
+                        ) : null}
+                        {w.status === "pending" && w.error ? (
+                          <p className="mt-1 max-w-[200px] text-[10px] text-amber-400">{w.error}</p>
+                        ) : null}
+                        {w.status === "completed" && w.txHash ? (
+                          <a
+                            href={blockExplorerTxUrl(w.txHash, w.network)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 block text-[10px] text-brand-400 hover:underline"
+                          >
+                            View on-chain tx →
+                          </a>
                         ) : null}
                       </td>
                       <td className="px-4 py-2.5 text-drift-muted">

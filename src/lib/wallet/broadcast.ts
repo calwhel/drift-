@@ -3,6 +3,7 @@ import { TOKEN_CONTRACTS } from "../constants";
 import { Wallet, Contract, parseUnits } from "ethers";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
+import { extractTronTxId } from "./tx-verify";
 
 const USDT_ERC20 = TOKEN_CONTRACTS.ERC20.USDT;
 const USDC_ERC20 = TOKEN_CONTRACTS.ERC20.USDC;
@@ -40,14 +41,11 @@ async function broadcastTrc20Usdt(privateKey: string, toAddress: string, amount:
 
       const contract = await tronWeb.contract().at(TOKEN_CONTRACTS.TRC20.USDT);
       const sunAmount = Math.round(amount * 1e6);
-      const result = await contract.transfer(toAddress, sunAmount).send();
+      const result = await contract.transfer(toAddress, sunAmount).send({
+        feeLimit: 100_000_000,
+      });
 
-      if (typeof result === "string") return result;
-      if (result && typeof result === "object") {
-        const r = result as { txid?: string; transaction?: { txID?: string } };
-        return r.txid ?? r.transaction?.txID ?? String(result);
-      }
-      return String(result);
+      return extractTronTxId(result);
     } catch (err) {
       if (!isTronRateLimitError(err) || attempt === maxAttempts) throw err;
       const backoffMs = Math.min(2000 * 2 ** (attempt - 1), 15000);
@@ -227,6 +225,9 @@ async function broadcastEvmUsdt(
       parseUnits(amount.toFixed(chain.usdtDecimals), chain.usdtDecimals)
     );
     const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) {
+      throw new Error("EVM USDT transfer reverted on-chain");
+    }
     return receipt.hash as string;
   });
 }
