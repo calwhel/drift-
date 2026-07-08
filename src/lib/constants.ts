@@ -3,8 +3,11 @@ export const NET_RATE = 0.985;
 
 import { EVM_USDT_CHAINS } from "./evm/chains";
 
-/** USDT networks merchants can choose when creating wallets or payment links */
-export const USDT_NETWORKS = [
+export const STABLECOIN_CURRENCIES = ["USDT", "USDC"] as const;
+export type StablecoinCurrency = (typeof STABLECOIN_CURRENCIES)[number];
+
+/** Networks merchants can use for USDT and USDC */
+export const STABLECOIN_NETWORKS = [
   { network: "TRC20", label: "TRC20 (Tron)" },
   { network: "SPL", label: "Solana (SPL)" },
   ...Object.values(EVM_USDT_CHAINS).map((c) => ({
@@ -13,14 +16,35 @@ export const USDT_NETWORKS = [
   })),
 ] as const;
 
-export type UsdtNetwork = (typeof USDT_NETWORKS)[number]["network"];
+/** @deprecated use STABLECOIN_NETWORKS */
+export const USDT_NETWORKS = STABLECOIN_NETWORKS;
+
+export type UsdtNetwork = (typeof STABLECOIN_NETWORKS)[number]["network"];
+export type StablecoinNetwork = UsdtNetwork;
+
+const USDC_NETWORK_LABELS: Record<string, string> = {
+  TRC20: "USDC (TRC20 / Tron)",
+  SPL: "USDC (Solana)",
+  BEP20: "USDC (BEP20 / BSC)",
+  Polygon: "USDC (Polygon)",
+  Arbitrum: "USDC (Arbitrum)",
+  Base: "USDC (Base)",
+  Avalanche: "USDC (Avalanche)",
+};
 
 /** Networks available for new merchant wallets and payment links */
-export const MERCHANT_WALLET_NETWORKS = USDT_NETWORKS.map((n) => ({
-  currency: "USDT" as const,
-  network: n.network,
-  label: n.label,
-}));
+export const MERCHANT_WALLET_NETWORKS = [
+  ...STABLECOIN_NETWORKS.map((n) => ({
+    currency: "USDT" as const,
+    network: n.network,
+    label: n.label,
+  })),
+  ...STABLECOIN_NETWORKS.map((n) => ({
+    currency: "USDC" as const,
+    network: n.network,
+    label: USDC_NETWORK_LABELS[n.network] ?? `USDC (${n.network})`,
+  })),
+];
 
 export type WalletType = "connected" | "generated";
 
@@ -30,7 +54,7 @@ export const PLATFORM_WALLET_NETWORKS = MERCHANT_WALLET_NETWORKS;
 /** Legacy default network per currency (used when network omitted) */
 export const NETWORKS = {
   USDT: { network: "TRC20", confirmations: 1, decimals: 6 },
-  USDC: { network: "ERC20", confirmations: 12, decimals: 6 },
+  USDC: { network: "TRC20", confirmations: 1, decimals: 6 },
   BTC: { network: "Bitcoin", confirmations: 3, decimals: 8 },
   ETH: { network: "ERC20", confirmations: 12, decimals: 18 },
   BNB: { network: "BEP20", confirmations: 15, decimals: 18 },
@@ -44,31 +68,37 @@ export const NETWORK_CONFIG: Record<string, { confirmations: number; decimals: n
   "USDT|TRC20": { confirmations: 1, decimals: 6 },
   "USDT|SPL": { confirmations: 32, decimals: 6 },
   "USDT|ERC20": { confirmations: 12, decimals: 6 },
+  "USDC|TRC20": { confirmations: 1, decimals: 6 },
+  "USDC|SPL": { confirmations: 32, decimals: 6 },
+  "USDC|ERC20": { confirmations: 12, decimals: 6 },
   ...Object.fromEntries(
-    Object.values(EVM_USDT_CHAINS).map((c) => [
-      `USDT|${c.network}`,
-      { confirmations: c.confirmations, decimals: c.usdtDecimals },
+    Object.values(EVM_USDT_CHAINS).flatMap((c) => [
+      [`USDT|${c.network}`, { confirmations: c.confirmations, decimals: c.usdtDecimals }],
+      [`USDC|${c.network}`, { confirmations: c.confirmations, decimals: c.usdcDecimals }],
     ])
   ),
-  "USDC|ERC20": { confirmations: 12, decimals: 6 },
   "BTC|Bitcoin": { confirmations: 3, decimals: 8 },
   "ETH|ERC20": { confirmations: 12, decimals: 18 },
   "SOL|Solana": { confirmations: 32, decimals: 9 },
 };
 
 export const TOKEN_CONTRACTS: Record<string, Record<string, string>> = {
-  TRC20: { USDT: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" },
+  TRC20: {
+    USDT: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+    USDC: "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8",
+  },
   ERC20: {
     USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
     USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
   },
   SPL: {
     USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   },
   ...Object.fromEntries(
     Object.values(EVM_USDT_CHAINS).map((c) => [
       c.network,
-      { USDT: c.usdtContract },
+      { USDT: c.usdtContract, USDC: c.usdcContract },
     ])
   ),
 };
@@ -84,6 +114,18 @@ export const CHART_COLORS: Record<string, string> = {
 
 export function networkConfigKey(currency: string, network: string) {
   return `${currency}|${network}`;
+}
+
+export function isStablecoin(currency: string): currency is StablecoinCurrency {
+  return STABLECOIN_CURRENCIES.includes(currency as StablecoinCurrency);
+}
+
+export function isStablecoinNetwork(network: string): boolean {
+  return STABLECOIN_NETWORKS.some((n) => n.network === network);
+}
+
+export function getTokenContract(currency: string, network: string): string | undefined {
+  return TOKEN_CONTRACTS[network]?.[currency];
 }
 
 export function getNetworkLabel(currency: string, network: string): string {
@@ -103,13 +145,18 @@ export function isMerchantNetworkEnabled(currency: string, network: string): boo
 
 export function disabledNetworkMessage(network: string): string | null {
   if (network === "ERC20") {
-    return "Ethereum (ERC20) is disabled. Use USDT on TRC20, Solana, BSC, Polygon, or other supported networks.";
+    return "Ethereum (ERC20) is disabled. Use USDT or USDC on TRC20, Solana, BSC, Polygon, or other supported networks.";
   }
   return null;
 }
 
+export function isLedgerOnlyStablecoin(currency: string, network: string): boolean {
+  return isStablecoin(currency) && isStablecoinNetwork(network);
+}
+
+/** @deprecated use isLedgerOnlyStablecoin */
 export function isUsdtLedgerOnly(currency: string, network: string): boolean {
-  return currency === "USDT" && isUsdtNetwork(network);
+  return isLedgerOnlyStablecoin(currency, network);
 }
 
 export function getHoldingAddress(currency: string, network: string): string {
@@ -138,14 +185,15 @@ export function getDecimals(currency: string, network?: string): number {
 }
 
 export function defaultNetworkForCurrency(currency: string): string {
-  if (currency === "USDT") return "TRC20";
+  if (currency === "USDT" || currency === "USDC") return "TRC20";
   return NETWORKS[currency as SupportedCurrency]?.network ?? "TRC20";
 }
 
+/** @deprecated use isStablecoinNetwork */
 export function isUsdtNetwork(network: string): boolean {
-  return USDT_NETWORKS.some((n) => n.network === network);
+  return isStablecoinNetwork(network);
 }
 
 export function isActivePaymentNetwork(network: string): boolean {
-  return isUsdtNetwork(network);
+  return isStablecoinNetwork(network);
 }

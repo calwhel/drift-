@@ -2,11 +2,13 @@ import { eq } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets } from "@/lib/db";
 import { completeTransaction } from "@/lib/blockchain/poller";
 import { fetchOnChainBalance } from "@/lib/blockchain/balances";
-import { TOKEN_CONTRACTS, getRequiredConfirmations } from "@/lib/constants";
+import { getTokenContract, getRequiredConfirmations, isStablecoin } from "@/lib/constants";
 import { isEvmUsdtNetwork } from "@/lib/evm/chains";
 import { verifyTronTransactionSuccess, verifyEvmTransactionSuccess } from "@/lib/wallet/tx-verify";
 
-const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
+function getTrc20TokenContract(currency: string): string | undefined {
+  return getTokenContract(currency, "TRC20");
+}
 
 export async function cancelTransaction(transactionId: string) {
   const [tx] = await db
@@ -45,9 +47,9 @@ export async function adminCompleteTransaction(transactionId: string) {
   const current = Number(tx.confirmations ?? 0);
 
   if (current < required) {
-    if (tx.network === "TRC20" && tx.currency === "USDT") {
+    if (tx.network === "TRC20" && isStablecoin(tx.currency)) {
       await verifyTronTransactionSuccess(tx.txHash, 30_000);
-    } else if (isEvmUsdtNetwork(tx.network) && tx.currency === "USDT") {
+    } else if (isEvmUsdtNetwork(tx.network) && isStablecoin(tx.currency)) {
       await verifyEvmTransactionSuccess(tx.txHash, tx.network, 30_000);
     } else {
       throw new Error(
@@ -74,7 +76,13 @@ interface OnChainTransfer {
   blockTimestamp: number | null;
 }
 
-export async function fetchTrc20UsdtTransfers(address: string): Promise<OnChainTransfer[]> {
+export async function fetchTrc20TokenTransfers(
+  address: string,
+  currency: string
+): Promise<OnChainTransfer[]> {
+  const tokenContract = getTrc20TokenContract(currency);
+  if (!tokenContract) return [];
+
   const apiKey = process.env.TRONGRID_API_KEY;
   const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?limit=30&only_to=true`;
   const res = await fetch(url, {
@@ -88,7 +96,7 @@ export async function fetchTrc20UsdtTransfers(address: string): Promise<OnChainT
       (tx: Record<string, unknown>) =>
         String(tx.to ?? "").toLowerCase() === address.toLowerCase() &&
         tx.token_info &&
-        (tx.token_info as { address: string }).address === USDT_TRC20
+        (tx.token_info as { address: string }).address === tokenContract
     )
     .map((tx: Record<string, unknown>) => ({
       txHash: String(tx.transaction_id),
@@ -109,7 +117,7 @@ export async function reconcileMerchantDeposits(userId: string) {
   const addresses = new Map<string, { label: string; currency: string; network: string }>();
 
   for (const wallet of userWallets) {
-    if (wallet.currency === "USDT") {
+    if (isStablecoin(wallet.currency)) {
       addresses.set(wallet.address, {
         label: `Wallet ${wallet.label ?? wallet.currency}`,
         currency: wallet.currency,
@@ -119,7 +127,7 @@ export async function reconcileMerchantDeposits(userId: string) {
   }
 
   for (const link of links) {
-    if (link.currency === "USDT" && link.depositAddress) {
+    if (isStablecoin(link.currency) && link.depositAddress) {
       addresses.set(link.depositAddress, {
         label: `Link: ${link.title}`,
         currency: link.currency,
@@ -134,10 +142,10 @@ export async function reconcileMerchantDeposits(userId: string) {
     let onChainBalance = 0;
 
     if (meta.network === "TRC20") {
-      transfers = await fetchTrc20UsdtTransfers(address);
+      transfers = await fetchTrc20TokenTransfers(address, meta.currency);
       onChainBalance = transfers.reduce((sum, t) => sum + t.amount, 0);
     } else if (meta.network === "SPL" || isEvmUsdtNetwork(meta.network)) {
-      const balance = await fetchOnChainBalance(address, "USDT", meta.network);
+      const balance = await fetchOnChainBalance(address, meta.currency, meta.network);
       onChainBalance = balance.amount ?? 0;
     }
 

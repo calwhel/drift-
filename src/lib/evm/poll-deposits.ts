@@ -1,5 +1,6 @@
 import { getAddress, id, zeroPadValue, JsonRpcProvider, type Log } from "ethers";
 import type { EvmChainConfig } from "./chains";
+import { getEvmTokenContract, getEvmTokenDecimals } from "./chains";
 import { withEvmRpc } from "./rpc";
 
 /** ERC-20 Transfer(address,address,uint256) */
@@ -24,7 +25,7 @@ export function encodeRecipientLogTopic(address: string): string {
 
 async function fetchLogsWithLookback(
   provider: JsonRpcProvider,
-  chain: EvmChainConfig,
+  tokenContract: string,
   toTopic: string,
   tip: number
 ): Promise<Log[]> {
@@ -33,7 +34,7 @@ async function fetchLogsWithLookback(
   for (const lookback of LOOKBACK_BLOCKS) {
     try {
       return await provider.getLogs({
-        address: chain.usdtContract,
+        address: tokenContract,
         topics: [TRANSFER_TOPIC, null, toTopic],
         fromBlock: Math.max(0, tip - lookback),
         toBlock: tip,
@@ -49,21 +50,28 @@ async function fetchLogsWithLookback(
 
   throw lastError instanceof Error
     ? lastError
-    : new Error(`eth_getLogs failed for ${chain.network}`);
+    : new Error("eth_getLogs failed");
 }
 
 /**
- * Detect inbound USDT transfers to a deposit address via public RPC (no Etherscan).
+ * Detect inbound ERC-20 transfers to a deposit address via public RPC (no Etherscan).
  */
-export async function pollEvmUsdtTransfersToAddress(
+export async function pollEvmTokenTransfersToAddress(
   depositAddress: string,
-  chain: EvmChainConfig
+  chain: EvmChainConfig,
+  currency: string
 ): Promise<EvmDetectedTransfer[]> {
+  const tokenContract = getEvmTokenContract(chain, currency);
+  const tokenDecimals = getEvmTokenDecimals(chain, currency);
+  if (!tokenContract || tokenDecimals == null) {
+    throw new Error(`Token ${currency} not configured on ${chain.network}`);
+  }
+
   const toTopic = encodeRecipientLogTopic(depositAddress);
 
   return withEvmRpc(chain, async (provider) => {
     const tip = await provider.getBlockNumber();
-    const logs = await fetchLogsWithLookback(provider, chain, toTopic, tip);
+    const logs = await fetchLogsWithLookback(provider, tokenContract, toTopic, tip);
 
     const byTx = new Map<string, Log>();
     for (const log of logs) {
@@ -82,7 +90,7 @@ export async function pollEvmUsdtTransfersToAddress(
       const raw = log.data && log.data !== "0x" ? BigInt(log.data) : BigInt(0);
       if (raw <= BigInt(0)) continue;
 
-      const amount = Number(raw) / Math.pow(10, chain.usdtDecimals);
+      const amount = Number(raw) / Math.pow(10, tokenDecimals);
       if (amount <= 0) continue;
 
       if (!blockTimestamps.has(log.blockNumber)) {
@@ -108,4 +116,12 @@ export async function pollEvmUsdtTransfersToAddress(
 
     return results;
   });
+}
+
+/** @deprecated use pollEvmTokenTransfersToAddress */
+export async function pollEvmUsdtTransfersToAddress(
+  depositAddress: string,
+  chain: EvmChainConfig
+): Promise<EvmDetectedTransfer[]> {
+  return pollEvmTokenTransfersToAddress(depositAddress, chain, "USDT");
 }

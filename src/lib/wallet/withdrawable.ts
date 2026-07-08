@@ -3,6 +3,7 @@ import { findEvmDepositSourcesWithBalance } from "../evm/deposits";
 import { findSplDepositSourcesWithBalance } from "./spl-deposits";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { isEvmUsdtNetwork } from "../evm/chains";
+import { isStablecoin } from "../constants";
 
 export interface WithdrawableOnChain {
   total: number;
@@ -24,7 +25,7 @@ function sumSpendable(
   return { spendable, unspendable };
 }
 
-/** Spendable on-chain USDT for a merchant wallet (custodial + sweepable deposit addresses only). */
+/** Spendable on-chain stablecoin for a merchant wallet (custodial + sweepable deposit addresses only). */
 export async function getWithdrawableOnChain(
   userId: string,
   custodialAddress: string,
@@ -38,8 +39,8 @@ export async function getWithdrawableOnChain(
 
   const custodialBal = custodial.amount ?? 0;
 
-  if (network === "TRC20" && currency === "USDT") {
-    const sources = await findTrc20DepositSourcesWithBalance(userId);
+  if (network === "TRC20" && isStablecoin(currency)) {
+    const sources = await findTrc20DepositSourcesWithBalance(userId, currency);
     const { spendable, unspendable } = sumSpendable(sources);
     return {
       total: Math.round((custodialBal + spendable) * 1e6) / 1e6,
@@ -50,8 +51,8 @@ export async function getWithdrawableOnChain(
     };
   }
 
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
-    const sources = await findEvmDepositSourcesWithBalance(userId, network);
+  if (isEvmUsdtNetwork(network) && isStablecoin(currency)) {
+    const sources = await findEvmDepositSourcesWithBalance(userId, network, currency);
     const { spendable, unspendable } = sumSpendable(sources);
     return {
       total: Math.round((custodialBal + spendable) * 1e6) / 1e6,
@@ -62,8 +63,8 @@ export async function getWithdrawableOnChain(
     };
   }
 
-  if (network === "SPL" && currency === "USDT") {
-    const sources = await findSplDepositSourcesWithBalance(userId);
+  if (network === "SPL" && isStablecoin(currency)) {
+    const sources = await findSplDepositSourcesWithBalance(userId, currency);
     const { spendable, unspendable } = sumSpendable(sources);
     return {
       total: Math.round((custodialBal + spendable) * 1e6) / 1e6,

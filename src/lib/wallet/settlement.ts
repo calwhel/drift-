@@ -6,7 +6,7 @@ import { derivePrivateKey, deriveDepositAddress } from "./derive";
 import { fundTronAddressIfNeeded, getTronSourceAddress } from "./tron-gas";
 import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
 import { notifyFeeSettlementFailed, notifyFeeSettlementSuccess } from "../telegram";
-import { isUsdtLedgerOnly } from "../constants";
+import { isLedgerOnlyStablecoin, isStablecoin } from "../constants";
 import { isEvmUsdtNetwork } from "../evm/chains";
 import { verifyEvmTransactionSuccess } from "./tx-verify";
 
@@ -35,7 +35,7 @@ export async function queueSettlements(
   const merchantAddress = sourceWallet?.address;
   const feeWallet = await getPlatformFeeAddress(currency, network);
   const isGenerated = sourceWallet?.walletType === "generated";
-  const ledgerOnly = isUsdtLedgerOnly(currency, network);
+  const ledgerOnly = isLedgerOnlyStablecoin(currency, network);
 
   const insertSettlement = async (values: typeof settlements.$inferInsert) => {
     await txClient
@@ -196,9 +196,9 @@ export async function processPendingSettlements(): Promise<number> {
 
     try {
       if (claimed.txHash) {
-        if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT") {
+        if (isEvmUsdtNetwork(claimed.network) && isStablecoin(claimed.currency)) {
           await verifyEvmTransactionSuccess(claimed.txHash, claimed.network, 15_000);
-        } else if (claimed.network === "TRC20" && claimed.currency === "USDT") {
+        } else if (claimed.network === "TRC20" && isStablecoin(claimed.currency)) {
           const { verifyTronTransactionSuccess } = await import("./tx-verify");
           await verifyTronTransactionSuccess(claimed.txHash, 15_000);
         }
@@ -214,7 +214,7 @@ export async function processPendingSettlements(): Promise<number> {
       const amount = Number(claimed.amount);
       const fromIndex = claimed.fromDerivationIndex;
 
-      if (claimed.network === "TRC20" && claimed.currency === "USDT") {
+      if (claimed.network === "TRC20" && isStablecoin(claimed.currency)) {
         const sourceAddress = getTronSourceAddress(
           fromIndex,
           claimed.currency,
@@ -232,8 +232,8 @@ export async function processPendingSettlements(): Promise<number> {
         if (sourceAddress) await fundTronAddressIfNeeded(sourceAddress);
       }
 
-      if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT" && fromIndex != null) {
-        const fromAddress = deriveDepositAddress(fromIndex, "USDT", claimed.network);
+      if (isEvmUsdtNetwork(claimed.network) && isStablecoin(claimed.currency) && fromIndex != null) {
+        const fromAddress = deriveDepositAddress(fromIndex, claimed.currency, claimed.network);
         await fundEvmNativeIfNeeded(claimed.network, fromAddress);
       }
 
@@ -246,8 +246,8 @@ export async function processPendingSettlements(): Promise<number> {
           claimed.currency,
           claimed.network
         );
-        if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT") {
-          const fromAddress = deriveDepositAddress(fromIndex, "USDT", claimed.network);
+        if (isEvmUsdtNetwork(claimed.network) && isStablecoin(claimed.currency)) {
+          const fromAddress = deriveDepositAddress(fromIndex, claimed.currency, claimed.network);
           await reclaimEvmNativeToGasWallet(claimed.network, privateKey, fromAddress);
         }
       } else if (claimed.walletId) {
