@@ -1,5 +1,5 @@
 /** Network fees deducted from the merchant's withdrawal (covers on-chain gas). */
-const WITHDRAWAL_NETWORK_FEE_USDT: Record<string, number> = {
+const WITHDRAWAL_NETWORK_FEES: Record<string, number> = {
   "USDT|TRC20": 2,
   "USDT|SPL": 0.05,
   "USDT|BEP20": 0.15,
@@ -7,14 +7,17 @@ const WITHDRAWAL_NETWORK_FEE_USDT: Record<string, number> = {
   "USDT|Arbitrum": 0.1,
   "USDT|Base": 0.05,
   "USDT|Avalanche": 0.1,
+  "USDC|SPL": 0.05,
+  "USDC|Polygon": 0.05,
+  "USDC|Base": 0.05,
 };
 
 export function getWithdrawalNetworkFee(currency: string, network: string): number {
-  return WITHDRAWAL_NETWORK_FEE_USDT[`${currency}|${network}`] ?? 0;
+  return WITHDRAWAL_NETWORK_FEES[`${currency}|${network}`] ?? 0;
 }
 
 export function getWithdrawalNetworkFees() {
-  return { ...WITHDRAWAL_NETWORK_FEE_USDT };
+  return { ...WITHDRAWAL_NETWORK_FEES };
 }
 
 export interface WithdrawalQuote {

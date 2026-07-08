@@ -1,4 +1,4 @@
-import { getDecimals, TOKEN_CONTRACTS } from "../constants";
+import { getDecimals, getTokenContract, isStablecoin, TOKEN_CONTRACTS } from "../constants";
 import { blockstreamFetch, logBlockstreamError } from "./blockstream";
 import { etherscanV2Fetch, parseEtherscanV2Json } from "./etherscan";
 import {
@@ -6,7 +6,7 @@ import {
   parseTrc20BalanceFromAccount,
 } from "./trongrid";
 import { validateWalletAddress } from "../wallet/generate";
-import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
+import { getEvmChain, getEvmTokenContract, getEvmTokenDecimals, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
 import { Contract } from "ethers";
 
@@ -18,23 +18,32 @@ export interface OnChainWalletBalance {
   error?: string;
 }
 
-const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
+async function fetchTrc20TokenBalance(address: string, currency: string): Promise<OnChainWalletBalance> {
+  const tokenContract = getTokenContract(currency, "TRC20");
+  if (!tokenContract) {
+    return {
+      amount: null,
+      currency,
+      network: "TRC20",
+      nativeGas: null,
+      error: `Unsupported TRC20 token: ${currency}`,
+    };
+  }
 
-async function fetchTrc20UsdtBalance(address: string): Promise<OnChainWalletBalance> {
   try {
     const account = await fetchTronAccount(address);
-    const amount = parseTrc20BalanceFromAccount(account, USDT_TRC20);
+    const amount = parseTrc20BalanceFromAccount(account, tokenContract);
     const trx = (account?.balance ?? 0) / 1e6;
     return {
       amount,
-      currency: "USDT",
+      currency,
       network: "TRC20",
       nativeGas: { amount: trx, symbol: "TRX" },
     };
   } catch (err) {
     return {
       amount: null,
-      currency: "USDT",
+      currency,
       network: "TRC20",
       nativeGas: null,
       error: err instanceof Error ? err.message : "Failed to fetch TRC20 balance",
@@ -42,7 +51,7 @@ async function fetchTrc20UsdtBalance(address: string): Promise<OnChainWalletBala
   }
 }
 
-async function fetchEvmTokenBalance(
+async function fetchEvmTokenBalanceViaEtherscan(
   address: string,
   currency: string,
   network: string,
@@ -67,18 +76,25 @@ async function fetchEvmTokenBalance(
   return Number(result ?? 0) / Math.pow(10, tokenDecimals);
 }
 
-async function fetchEvmUsdtBalanceRpc(
+async function fetchEvmTokenBalanceRpc(
   address: string,
-  chain: NonNullable<ReturnType<typeof getEvmChain>>
+  chain: NonNullable<ReturnType<typeof getEvmChain>>,
+  currency: string
 ): Promise<{ amount: number; nativeGas: number | null }> {
+  const tokenContract = getEvmTokenContract(chain, currency);
+  const tokenDecimals = getEvmTokenDecimals(chain, currency);
+  if (!tokenContract || tokenDecimals == null) {
+    throw new Error(`Token ${currency} not configured on ${chain.network}`);
+  }
+
   return withEvmRpc(chain, async (provider) => {
     const contract = new Contract(
-      chain.usdtContract,
+      tokenContract,
       ["function balanceOf(address) view returns (uint256)"],
       provider
     );
     const raw = await contract.balanceOf(address);
-    const amount = Number(raw) / Math.pow(10, chain.usdtDecimals);
+    const amount = Number(raw) / Math.pow(10, tokenDecimals);
     let nativeGas: number | null = null;
     try {
       const native = await provider.getBalance(address);
@@ -90,8 +106,9 @@ async function fetchEvmUsdtBalanceRpc(
   });
 }
 
-async function fetchEvmUsdtBalance(
+async function fetchEvmStablecoinBalance(
   address: string,
+  currency: string,
   network: string
 ): Promise<OnChainWalletBalance> {
   const chain = getEvmChain(network);
@@ -99,47 +116,58 @@ async function fetchEvmUsdtBalance(
   if (!chain) {
     return {
       amount: null,
-      currency: "USDT",
+      currency,
       network,
       nativeGas: null,
       error: `Unknown EVM network: ${network}`,
     };
   }
 
-  // Prefer RPC (zero-config); fall back to Etherscan when available
+  const tokenContract = getEvmTokenContract(chain, currency);
+  const tokenDecimals = getEvmTokenDecimals(chain, currency);
+  if (!tokenContract || tokenDecimals == null) {
+    return {
+      amount: null,
+      currency,
+      network,
+      nativeGas: null,
+      error: `Token ${currency} not supported on ${network}`,
+    };
+  }
+
   try {
-    const rpc = await fetchEvmUsdtBalanceRpc(address, chain);
+    const rpc = await fetchEvmTokenBalanceRpc(address, chain, currency);
     return {
       amount: rpc.amount,
-      currency: "USDT",
+      currency,
       network,
       nativeGas:
         rpc.nativeGas != null ? { amount: rpc.nativeGas, symbol: chain.nativeSymbol } : null,
     };
   } catch (rpcErr) {
-    console.warn(`[balances] RPC USDT balance failed for ${network} ${address}:`, rpcErr);
+    console.warn(`[balances] RPC ${currency} balance failed for ${network} ${address}:`, rpcErr);
   }
 
   const apiKey = process.env.ETHERSCAN_API_KEY;
   if (!apiKey) {
     return {
       amount: null,
-      currency: "USDT",
+      currency,
       network,
       nativeGas: null,
-      error: `Could not read ${network} USDT balance via RPC or Etherscan`,
+      error: `Could not read ${network} ${currency} balance via RPC or Etherscan`,
     };
   }
 
   try {
-    const amount = await fetchEvmTokenBalance(
+    const amount = await fetchEvmTokenBalanceViaEtherscan(
       address,
-      "USDT",
+      currency,
       network,
       apiKey,
-      chain.usdtContract,
+      tokenContract,
       chain.chainId,
-      chain.usdtDecimals
+      tokenDecimals
     );
     let nativeGas: number | null = null;
     try {
@@ -156,14 +184,14 @@ async function fetchEvmUsdtBalance(
 
     return {
       amount,
-      currency: "USDT",
+      currency,
       network,
       nativeGas: nativeGas != null ? { amount: nativeGas, symbol: chain.nativeSymbol } : null,
     };
   } catch (err) {
     return {
       amount: null,
-      currency: "USDT",
+      currency,
       network,
       nativeGas: null,
       error: err instanceof Error ? err.message : `Failed to fetch ${network} balance`,
@@ -220,7 +248,13 @@ async function fetchErc20Balance(address: string, currency: string): Promise<OnC
       };
     }
 
-    const amount = await fetchEvmTokenBalance(address, currency, "ERC20", apiKey, contract);
+    const amount = await fetchEvmTokenBalanceViaEtherscan(
+      address,
+      currency,
+      "ERC20",
+      apiKey,
+      contract
+    );
     let ethGas: number | null = null;
     try {
       ethGas = await fetchEvmNativeBalance(address, apiKey, 18);
@@ -245,7 +279,18 @@ async function fetchErc20Balance(address: string, currency: string): Promise<OnC
   }
 }
 
-async function fetchSplUsdtBalance(address: string): Promise<OnChainWalletBalance> {
+async function fetchSplTokenBalance(address: string, currency: string): Promise<OnChainWalletBalance> {
+  const mintAddress = getTokenContract(currency, "SPL");
+  if (!mintAddress) {
+    return {
+      amount: null,
+      currency,
+      network: "SPL",
+      nativeGas: null,
+      error: `Unsupported SPL token: ${currency}`,
+    };
+  }
+
   try {
     const { Connection, PublicKey } = await import("@solana/web3.js");
     const { getAssociatedTokenAddress } = await import("@solana/spl-token");
@@ -253,7 +298,7 @@ async function fetchSplUsdtBalance(address: string): Promise<OnChainWalletBalanc
     const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
     const connection = new Connection(rpc, "confirmed");
     const owner = new PublicKey(address);
-    const mint = new PublicKey(TOKEN_CONTRACTS.SPL.USDT);
+    const mint = new PublicKey(mintAddress);
 
     const solBalance = (await connection.getBalance(owner)) / 1e9;
 
@@ -268,14 +313,14 @@ async function fetchSplUsdtBalance(address: string): Promise<OnChainWalletBalanc
 
     return {
       amount,
-      currency: "USDT",
+      currency,
       network: "SPL",
       nativeGas: { amount: solBalance, symbol: "SOL" },
     };
   } catch (err) {
     return {
       amount: null,
-      currency: "USDT",
+      currency,
       network: "SPL",
       nativeGas: null,
       error: err instanceof Error ? err.message : "Failed to fetch SPL balance",
@@ -384,17 +429,17 @@ export async function fetchOnChainBalance(
     };
   }
 
-  if (network === "TRC20" && currency === "USDT") {
-    return fetchTrc20UsdtBalance(trimmed);
+  if (network === "TRC20" && isStablecoin(currency)) {
+    return fetchTrc20TokenBalance(trimmed, currency);
   }
   if (network === "ERC20") {
     return fetchErc20Balance(trimmed, currency);
   }
-  if (network === "SPL" && currency === "USDT") {
-    return fetchSplUsdtBalance(trimmed);
+  if (network === "SPL" && isStablecoin(currency)) {
+    return fetchSplTokenBalance(trimmed, currency);
   }
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
-    return fetchEvmUsdtBalance(trimmed, network);
+  if (isEvmUsdtNetwork(network) && isStablecoin(currency)) {
+    return fetchEvmStablecoinBalance(trimmed, currency, network);
   }
   if (network === "Solana" && currency === "SOL") {
     return fetchSolanaNativeBalance(trimmed);

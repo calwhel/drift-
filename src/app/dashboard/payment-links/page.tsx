@@ -8,9 +8,9 @@ import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
-import { USDT_NETWORKS, getNetworkLabel, type UsdtNetwork } from "@/lib/constants";
+import { merchantNetworksForCurrency, getNetworkLabel, type StablecoinNetwork } from "@/lib/constants";
 
-const CURRENCIES = ["USDT"];
+const CURRENCIES = ["USDT", "USDC"];
 const EXPIRY_OPTIONS: Record<string, number | null> = {
   "1 day": 1,
   "7 days": 7,
@@ -43,7 +43,8 @@ export default function PaymentLinksPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
-  const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("TRC20");
+  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
+  const networkOptions = useMemo(() => merchantNetworksForCurrency(currency), [currency]);
   const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
   const [expiryOn, setExpiryOn] = useState(false);
@@ -86,12 +87,14 @@ export default function PaymentLinksPage() {
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load wallets"));
   }, []);
 
+  const isStablecoinCurrency = currency === "USDT" || currency === "USDC";
+
   const walletsForCurrency = useMemo(() => {
-    if (currency === "USDT") {
-      return wallets.filter((w) => w.currency === "USDT" && w.network === usdtNetwork);
+    if (isStablecoinCurrency) {
+      return wallets.filter((w) => w.currency === currency && w.network === stablecoinNetwork);
     }
     return wallets.filter((w) => w.currency === currency);
-  }, [wallets, currency, usdtNetwork]);
+  }, [wallets, currency, stablecoinNetwork, isStablecoinCurrency]);
 
   useEffect(() => {
     if (walletsForCurrency.length > 0 && !walletsForCurrency.find((w) => w.id === walletId)) {
@@ -119,7 +122,9 @@ export default function PaymentLinksPage() {
 
   const handleCreate = async () => {
     if (!walletId) {
-      const networkHint = currency === "USDT" ? ` on ${getNetworkLabel("USDT", usdtNetwork)}` : "";
+      const networkHint = isStablecoinCurrency
+        ? ` on ${getNetworkLabel(currency, stablecoinNetwork)}`
+        : "";
       setError(`Create a ${currency} wallet${networkHint} in Wallets first`);
       return;
     }
@@ -141,7 +146,7 @@ export default function PaymentLinksPage() {
         description: description || undefined,
         amount: Number(amount),
         currency,
-        network: currency === "USDT" ? usdtNetwork : selectedWallet?.network,
+        network: isStablecoinCurrency ? stablecoinNetwork : selectedWallet?.network,
         wallet_id: walletId,
         redirect_url: redirectUrl || undefined,
         expiry: expiryIso,
@@ -248,7 +253,8 @@ export default function PaymentLinksPage() {
                             onClick={() => {
                               setCurrency(c);
                               setCurrencyOpen(false);
-                              if (c === "USDT") setUsdtNetwork("TRC20");
+                              if (c === "USDT") setStablecoinNetwork("TRC20");
+                              if (c === "USDC") setStablecoinNetwork("SPL");
                             }}
                             className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-white hover:bg-white/5"
                           >
@@ -262,23 +268,23 @@ export default function PaymentLinksPage() {
                 </div>
               </div>
 
-              {currency === "USDT" && (
+              {isStablecoinCurrency && (
                 <div>
-                  <label className="mb-1.5 block text-[13px] font-medium text-white">USDT Network</label>
+                  <label className="mb-1.5 block text-[13px] font-medium text-white">{currency} Network</label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {USDT_NETWORKS.map((n) => (
+                    {networkOptions.map((n) => (
                       <button
                         key={n.network}
                         type="button"
-                        onClick={() => setUsdtNetwork(n.network)}
+                        onClick={() => setStablecoinNetwork(n.network)}
                         className={cn(
                           "rounded-lg border px-3 py-2.5 text-left text-[13px] transition-colors",
-                          usdtNetwork === n.network
+                          stablecoinNetwork === n.network
                             ? "border-[#7c3aed] bg-[#7c3aed18] text-white"
                             : "border-drift-border bg-drift-bg text-drift-muted hover:border-[#3f3f50]"
                         )}
                       >
-                        {n.label}
+                        {getNetworkLabel(currency, n.network)}
                       </button>
                     ))}
                   </div>
@@ -290,7 +296,7 @@ export default function PaymentLinksPage() {
                 {walletsForCurrency.length === 0 ? (
                   <p className="text-sm text-red-400">
                     No {currency}
-                    {currency === "USDT" ? ` (${getNetworkLabel("USDT", usdtNetwork)})` : ""} wallet yet.{" "}
+                    {isStablecoinCurrency ? ` (${getNetworkLabel(currency, stablecoinNetwork)})` : ""} wallet yet.{" "}
                     <Link href="/dashboard/wallets" className="text-brand-400 hover:underline">
                       Add one in Wallets
                     </Link>
@@ -398,9 +404,9 @@ export default function PaymentLinksPage() {
               )}
               <p className="mt-5 text-2xl font-bold tabular-nums text-white">
                 {amount || createdLink?.amount || "0.00"} {currency}
-                {currency === "USDT" && (
+                {isStablecoinCurrency && (
                   <span className="ml-2 text-base font-medium text-drift-muted">
-                    {getNetworkLabel("USDT", usdtNetwork)}
+                    {getNetworkLabel(currency, stablecoinNetwork)}
                   </span>
                 )}
               </p>

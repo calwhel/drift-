@@ -1,5 +1,6 @@
 import { tronGridFetch } from "../blockchain/trongrid";
 import { isEvmUsdtNetwork } from "../evm/chains";
+import { isStablecoin } from "../constants";
 
 const TRON_TX_RE = /^[a-f0-9]{64}$/;
 const EVM_TX_RE = /^0x[a-fA-F0-9]{64}$/;
@@ -130,21 +131,21 @@ export async function verifyWithdrawalTransactions(
 ): Promise<void> {
   const hashes = parseWithdrawalTxHashes(txHash, currency, network);
 
-  if (network === "TRC20" && currency === "USDT") {
+  if (network === "TRC20" && isStablecoin(currency)) {
     for (const hash of hashes) {
       await verifyTronTransactionSuccess(hash);
     }
     return;
   }
 
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+  if (isEvmUsdtNetwork(network) && isStablecoin(currency)) {
     for (const hash of hashes) {
       await verifyEvmTransactionSuccess(hash, network);
     }
     return;
   }
 
-  if (network === "SPL" && currency === "USDT") {
+  if (network === "SPL" && isStablecoin(currency)) {
     // sendAndConfirmTransaction already confirms
     return;
   }

@@ -16,7 +16,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 export async function findSplDepositSourcesWithBalance(
-  userId: string
+  userId: string,
+  currency: string
 ): Promise<SplDepositSource[]> {
   const links = await db
     .select({
@@ -27,7 +28,7 @@ export async function findSplDepositSourcesWithBalance(
     .where(
       and(
         eq(paymentLinks.userId, userId),
-        eq(paymentLinks.currency, "USDT"),
+        eq(paymentLinks.currency, currency),
         eq(paymentLinks.network, "SPL")
       )
     );
@@ -38,7 +39,7 @@ export async function findSplDepositSourcesWithBalance(
     const address =
       link.depositAddress?.trim() ||
       (link.derivationIndex != null
-        ? deriveDepositAddress(link.derivationIndex, "USDT", "SPL")
+        ? deriveDepositAddress(link.derivationIndex, currency, "SPL")
         : null);
     if (!address) continue;
 
@@ -55,7 +56,7 @@ export async function findSplDepositSourcesWithBalance(
   for (const [address, derivationIndex] of Array.from(addressMap.entries())) {
     if (i++ > 0) await sleep(BALANCE_FETCH_DELAY_MS);
 
-    const onChain = await fetchOnChainBalance(address, "USDT", "SPL");
+    const onChain = await fetchOnChainBalance(address, currency, "SPL");
     if (onChain.error) {
       throw new Error(
         `Could not verify on-chain balance for deposit ${address.slice(0, 8)}… (${onChain.error}). Try again in a minute.`

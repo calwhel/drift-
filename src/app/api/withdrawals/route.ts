@@ -12,7 +12,7 @@ import {
 } from "@/lib/wallet/withdrawal-fees";
 import { getWithdrawableOnChain } from "@/lib/wallet/withdrawable";
 import { notifyWithdrawalRequested } from "@/lib/telegram";
-import { isUsdtLedgerOnly } from "@/lib/constants";
+import { isLedgerOnlyStablecoin } from "@/lib/constants";
 
 const createSchema = z.object({
   wallet_id: z.string().uuid(),
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       data.amount
     );
 
-    if (isUsdtLedgerOnly(wallet.currency, wallet.network)) {
+    if (isLedgerOnlyStablecoin(wallet.currency, wallet.network)) {
       try {
         const onChain = await getWithdrawableOnChain(
           auth.userId,
@@ -101,12 +101,12 @@ export async function POST(req: NextRequest) {
         if (onChain.total + 0.000001 < netAmount) {
           const detail =
             onChain.unspendableDeposits > 0
-              ? ` (${onChain.unspendableDeposits.toFixed(4)} USDT on unspendable deposit addresses excluded)`
+              ? ` (${onChain.unspendableDeposits.toFixed(4)} ${wallet.currency} on unspendable deposit addresses excluded)`
               : "";
           return NextResponse.json(
             {
               error:
-                `Not enough spendable USDT on-chain to send ${netAmount.toFixed(4)} USDT (found ${onChain.total.toFixed(4)} across wallet and deposit addresses${detail}). ` +
+                `Not enough spendable ${wallet.currency} on-chain to send ${netAmount.toFixed(4)} ${wallet.currency} (found ${onChain.total.toFixed(4)} across wallet and deposit addresses${detail}). ` +
                 "Wait for payments to confirm, then try again.",
             },
             { status: 400 }

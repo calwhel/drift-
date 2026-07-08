@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
-import { USDT_NETWORKS, getNetworkLabel, type UsdtNetwork } from "@/lib/constants";
+import { merchantNetworksForCurrency, getNetworkLabel, defaultNetworkForCurrency, type StablecoinNetwork } from "@/lib/constants";
 
 interface Invoice {
   id: string;
@@ -26,7 +26,9 @@ export default function InvoicesPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
-  const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("TRC20");
+  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
+  const isStablecoinCurrency = currency === "USDT" || currency === "USDC";
+  const networkOptions = merchantNetworksForCurrency(currency);
   const [loading, setLoading] = useState(false);
   const [lastLink, setLastLink] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -55,7 +57,7 @@ export default function InvoicesPage() {
         customer_email: customerEmail,
         customer_name: customerName || undefined,
         currency,
-        network: currency === "USDT" ? usdtNetwork : undefined,
+        network: isStablecoinCurrency ? stablecoinNetwork : undefined,
         items: [{ description: description || "Invoice item", quantity: 1, unit_price: Number(amount) }],
       }),
     });
@@ -91,32 +93,35 @@ export default function InvoicesPage() {
             <input placeholder="Item description" value={description} onChange={(e) => setDescription(e.target.value)} className="input w-full" />
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="input" />
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input">
+              <select value={currency} onChange={(e) => {
+                const next = e.target.value;
+                setCurrency(next);
+                setStablecoinNetwork(defaultNetworkForCurrency(next) as StablecoinNetwork);
+              }} className="input">
                 <option value="USDT">USDT</option>
                 <option value="USDC">USDC</option>
-                <option value="BTC">BTC</option>
               </select>
             </div>
-            {currency === "USDT" && (
+            {isStablecoinCurrency && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {USDT_NETWORKS.map((n) => (
+                {networkOptions.map((n) => (
                   <button
                     key={n.network}
                     type="button"
-                    onClick={() => setUsdtNetwork(n.network)}
+                    onClick={() => setStablecoinNetwork(n.network)}
                     className={`rounded-lg border px-3 py-2 text-left text-xs ${
-                      usdtNetwork === n.network
+                      stablecoinNetwork === n.network
                         ? "border-[#7c3aed] bg-[#7c3aed18] text-white"
                         : "border-drift-border text-drift-muted"
                     }`}
                   >
-                    {n.label}
+                    {getNetworkLabel(currency, n.network)}
                   </button>
                 ))}
               </div>
             )}
-            {currency === "USDT" && (
-              <p className="text-2xs text-drift-muted">Network: {getNetworkLabel("USDT", usdtNetwork)}</p>
+            {isStablecoinCurrency && (
+              <p className="text-2xs text-drift-muted">Network: {getNetworkLabel(currency, stablecoinNetwork)}</p>
             )}
             <button onClick={handleCreate} disabled={loading} className="btn-primary">Create invoice</button>
             {lastLink && <p className="text-xs text-drift-green">Payment link: <Link href={lastLink} className="underline">{lastLink}</Link></p>}

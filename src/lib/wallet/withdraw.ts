@@ -10,6 +10,7 @@ import { findSplDepositSourcesWithBalance } from "./spl-deposits";
 import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
 import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
 import { fundSolIfNeeded } from "./spl-gas";
+import { isStablecoin } from "../constants";
 import { isEvmUsdtNetwork } from "../evm/chains";
 import {
   assertPositiveNetAmount,
@@ -114,18 +115,19 @@ const RESTORED_BALANCE_MSG =
 const FALSE_COMPLETE_MSG =
   "Withdrawal was marked complete without a confirmed on-chain payout. Your Drift wallet balance has been restored — please submit a new withdrawal.";
 
-async function broadcastTrc20UsdtWithdrawal(
+async function broadcastTrc20TokenWithdrawal(
   privateKey: string,
   fromAddress: string,
   toAddress: string,
-  amount: number
+  amount: number,
+  currency: string
 ): Promise<string> {
   await fundTronAddressIfNeeded(fromAddress);
   const txHash = await broadcastFromPrivateKey(
     privateKey,
     toAddress,
     amount,
-    "USDT",
+    currency,
     "TRC20"
   );
   await reclaimTronTrxToGasWallet(privateKey, fromAddress);
@@ -160,11 +162,12 @@ async function processTrc20UsdtWithdrawal(
   try {
     if (custodialBalance > 0.000001) {
       const sendAmount = Math.min(custodialBalance, remaining);
-      const hash = await broadcastTrc20UsdtWithdrawal(
+      const hash = await broadcastTrc20TokenWithdrawal(
         privateKey,
         wallet.address,
         withdrawal.toAddress,
-        sendAmount
+        sendAmount,
+        wallet.currency
       );
       txHashes.push(hash);
       await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -172,14 +175,14 @@ async function processTrc20UsdtWithdrawal(
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findTrc20DepositSourcesWithBalance(wallet.userId);
+      const depositSources = await findTrc20DepositSourcesWithBalance(wallet.userId, wallet.currency);
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         const skipped = depositSources.length - spendable.length;
         throw new Error(
-          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)} spendable across wallet + ${spendable.length} deposit address(es), need ${netAmount.toFixed(4)} net)` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)} spendable across wallet + ${spendable.length} deposit address(es), need ${netAmount.toFixed(4)} net)` +
             (skipped > 0 ? ` — ${skipped} deposit address(es) missing keys and cannot be swept.` : "") +
             " Payments may still be confirming — wait a few minutes and retry."
         );
@@ -190,11 +193,12 @@ async function processTrc20UsdtWithdrawal(
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex!, "TRC20");
-        const hash = await broadcastTrc20UsdtWithdrawal(
+        const hash = await broadcastTrc20TokenWithdrawal(
           depositKey,
           source.address,
           withdrawal.toAddress,
-          sendAmount
+          sendAmount,
+          wallet.currency
         );
         txHashes.push(hash);
         await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -204,7 +208,7 @@ async function processTrc20UsdtWithdrawal(
 
     if (remaining > 0.000001) {
       throw new Error(
-        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+        `Could not source enough ${wallet.currency} for withdrawal (short ${remaining.toFixed(4)} ${wallet.currency})`
       );
     }
   } catch (err) {
@@ -219,25 +223,26 @@ async function processTrc20UsdtWithdrawal(
   }
 
   if (txHashes.length === 0) {
-    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
+    throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
   }
 
   return txHashes.join(",");
 }
 
-async function broadcastEvmUsdtWithdrawal(
+async function broadcastEvmTokenWithdrawal(
   network: string,
   privateKey: string,
   fromAddress: string,
   toAddress: string,
-  amount: number
+  amount: number,
+  currency: string
 ): Promise<string> {
   await fundEvmNativeIfNeeded(network, fromAddress);
   const txHash = await broadcastFromPrivateKey(
     privateKey,
     toAddress,
     amount,
-    "USDT",
+    currency,
     network
   );
   await reclaimEvmNativeToGasWallet(network, privateKey, fromAddress);
@@ -271,12 +276,13 @@ async function processEvmUsdtWithdrawal(
   try {
     if (custodialBalance > 0.000001) {
       const sendAmount = Math.min(custodialBalance, remaining);
-      const hash = await broadcastEvmUsdtWithdrawal(
+      const hash = await broadcastEvmTokenWithdrawal(
         network,
         privateKey,
         wallet.address,
         withdrawal.toAddress,
-        sendAmount
+        sendAmount,
+        wallet.currency
       );
       txHashes.push(hash);
       await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -284,13 +290,13 @@ async function processEvmUsdtWithdrawal(
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findEvmDepositSourcesWithBalance(wallet.userId, network);
+      const depositSources = await findEvmDepositSourcesWithBalance(wallet.userId, network, wallet.currency);
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         throw new Error(
-          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
             "Funds may still be confirming — wait a few minutes and retry."
         );
       }
@@ -300,12 +306,13 @@ async function processEvmUsdtWithdrawal(
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex!, network);
-        const hash = await broadcastEvmUsdtWithdrawal(
+        const hash = await broadcastEvmTokenWithdrawal(
           network,
           depositKey,
           source.address,
           withdrawal.toAddress,
-          sendAmount
+          sendAmount,
+          wallet.currency
         );
         txHashes.push(hash);
         await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -315,7 +322,7 @@ async function processEvmUsdtWithdrawal(
 
     if (remaining > 0.000001) {
       throw new Error(
-        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+        `Could not source enough ${wallet.currency} for withdrawal (short ${remaining.toFixed(4)} ${wallet.currency})`
       );
     }
   } catch (err) {
@@ -330,20 +337,21 @@ async function processEvmUsdtWithdrawal(
   }
 
   if (txHashes.length === 0) {
-    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
+    throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
   }
 
   return txHashes.join(",");
 }
 
-async function broadcastSplUsdtWithdrawal(
+async function broadcastSplTokenWithdrawal(
   privateKey: string,
   fromAddress: string,
   toAddress: string,
-  amount: number
+  amount: number,
+  currency: string
 ): Promise<string> {
   await fundSolIfNeeded(fromAddress);
-  const txHash = await broadcastFromPrivateKey(privateKey, toAddress, amount, "USDT", "SPL");
+  const txHash = await broadcastFromPrivateKey(privateKey, toAddress, amount, currency, "SPL");
   const { reclaimSolToGasWallet } = await import("./spl-gas");
   await reclaimSolToGasWallet(privateKey, fromAddress);
   return txHash;
@@ -375,11 +383,12 @@ async function processSplUsdtWithdrawal(
   try {
     if (custodialBalance > 0.000001) {
       const sendAmount = Math.min(custodialBalance, remaining);
-      const hash = await broadcastSplUsdtWithdrawal(
+      const hash = await broadcastSplTokenWithdrawal(
         privateKey,
         wallet.address,
         withdrawal.toAddress,
-        sendAmount
+        sendAmount,
+        wallet.currency
       );
       txHashes.push(hash);
       await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -387,13 +396,13 @@ async function processSplUsdtWithdrawal(
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findSplDepositSourcesWithBalance(wallet.userId);
+      const depositSources = await findSplDepositSourcesWithBalance(wallet.userId, wallet.currency);
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         throw new Error(
-          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
             "Funds may still be confirming — wait a few minutes and retry."
         );
       }
@@ -403,11 +412,12 @@ async function processSplUsdtWithdrawal(
 
         const sendAmount = Math.min(source.balance, remaining);
         const depositKey = derivePrivateKey(source.derivationIndex!, "SPL");
-        const hash = await broadcastSplUsdtWithdrawal(
+        const hash = await broadcastSplTokenWithdrawal(
           depositKey,
           source.address,
           withdrawal.toAddress,
-          sendAmount
+          sendAmount,
+          wallet.currency
         );
         txHashes.push(hash);
         await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
@@ -417,7 +427,7 @@ async function processSplUsdtWithdrawal(
 
     if (remaining > 0.000001) {
       throw new Error(
-        `Could not source enough USDT for withdrawal (short ${remaining.toFixed(4)} USDT)`
+        `Could not source enough ${wallet.currency} for withdrawal (short ${remaining.toFixed(4)} ${wallet.currency})`
       );
     }
   } catch (err) {
@@ -432,7 +442,7 @@ async function processSplUsdtWithdrawal(
   }
 
   if (txHashes.length === 0) {
-    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
+    throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
   }
 
   return txHashes.join(",");
@@ -467,7 +477,7 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
     const primaryHash = w.txHash?.split(",")[0]?.trim() ?? "";
     let invalid = !primaryHash || !isValidTxHashForNetwork(primaryHash, w.currency, w.network);
 
-    if (!invalid && w.network === "TRC20" && w.currency === "USDT") {
+    if (!invalid && w.network === "TRC20" && isStablecoin(w.currency)) {
       try {
         await verifyTronTransactionSuccess(primaryHash, 20_000);
       } catch {
@@ -475,7 +485,7 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
       }
     }
 
-    if (!invalid && isEvmUsdtNetwork(w.network) && w.currency === "USDT") {
+    if (!invalid && isEvmUsdtNetwork(w.network) && isStablecoin(w.currency)) {
       try {
         await verifyEvmTransactionSuccess(primaryHash, w.network, 20_000);
       } catch {
@@ -612,11 +622,11 @@ export async function processPendingWithdrawals(): Promise<number> {
 
       if (withdrawal.txHash) {
         txHash = withdrawal.txHash;
-      } else if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
+      } else if (withdrawal.network === "TRC20" && isStablecoin(withdrawal.currency)) {
         txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
-      } else if (isEvmUsdtNetwork(withdrawal.network) && withdrawal.currency === "USDT") {
+      } else if (isEvmUsdtNetwork(withdrawal.network) && isStablecoin(withdrawal.currency)) {
         txHash = await processEvmUsdtWithdrawal(withdrawal, wallet, privateKey);
-      } else if (withdrawal.network === "SPL" && withdrawal.currency === "USDT") {
+      } else if (withdrawal.network === "SPL" && isStablecoin(withdrawal.currency)) {
         txHash = await processSplUsdtWithdrawal(withdrawal, wallet, privateKey);
       } else {
         const netAmount = getNetSendAmount(withdrawal);

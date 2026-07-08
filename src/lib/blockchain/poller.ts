@@ -1,7 +1,7 @@
 import { eq, and, desc, inArray, sql, isNull } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
-import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
+import { getRequiredConfirmations, getDecimals, getTokenContract, isStablecoin } from "../constants";
 import { dispatchWebhooks } from "../webhooks";
 import { queueSettlements } from "../wallet/settlement";
 import { notifyPaymentCompleted, notifyPaymentDetected } from "../telegram";
@@ -15,7 +15,7 @@ import { buildEtherscanV2Url } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
-import { pollEvmUsdtTransfersToAddress } from "../evm/poll-deposits";
+import { pollEvmTokenTransfersToAddress } from "../evm/poll-deposits";
 import { recordPollFailure, recordPollSuccess } from "./poll-health";
 
 interface DetectedPayment {
@@ -33,8 +33,6 @@ interface PollTarget {
   currency: string;
   network: string;
 }
-
-const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
 
 function pollTargetKey(address: string, currency: string, network: string) {
   return `${address}|${currency}|${network}`;
@@ -103,8 +101,8 @@ async function getPollTargets(): Promise<PollTarget[]> {
 async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
   const { address, currency, network } = target;
 
-  if (network === "TRC20" && currency === "USDT") {
-    return pollTron(address);
+  if (network === "TRC20" && isStablecoin(currency)) {
+    return pollTron(address, currency);
   }
   if (network === "ERC20") {
     if (!process.env.ETHERSCAN_API_KEY) {
@@ -112,16 +110,16 @@ async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
     }
     return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY);
   }
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+  if (isEvmUsdtNetwork(network) && isStablecoin(currency)) {
     const chain = getEvmChain(network);
     if (!chain) return [];
-    return pollEvmUsdtViaRpc(address, network, chain);
+    return pollEvmTokenViaRpc(address, network, chain, currency);
   }
   if (network === "Bitcoin") {
     return pollBitcoin(address);
   }
-  if (network === "SPL" && currency === "USDT") {
-    return pollSolanaSpl(address);
+  if (network === "SPL" && isStablecoin(currency)) {
+    return pollSolanaSpl(address, currency);
   }
   if (network === "Solana") {
     return pollSolana(address);
@@ -130,7 +128,10 @@ async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
   return [];
 }
 
-async function pollTron(address: string): Promise<DetectedPayment[]> {
+async function pollTron(address: string, currency: string): Promise<DetectedPayment[]> {
+  const tokenContract = getTokenContract(currency, "TRC20");
+  if (!tokenContract) return [];
+
   const apiKey = process.env.TRONGRID_API_KEY;
   const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?limit=30&only_to=true`;
   const res = await fetch(url, {
@@ -139,26 +140,26 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
   if (!res.ok) {
     const msg = `TronGrid API error ${res.status}`;
     console.warn(`[payment-poller] ${msg} for ${address}`);
-    recordPollFailure("TRC20", "USDT", msg);
+    recordPollFailure("TRC20", currency, msg);
     return [];
   }
 
-  recordPollSuccess("TRC20", "USDT");
+  recordPollSuccess("TRC20", currency);
 
   const data = await res.json();
-  const required = getRequiredConfirmations("USDT", "TRC20");
+  const required = getRequiredConfirmations(currency, "TRC20");
 
   return (data.data ?? [])
     .filter(
       (tx: Record<string, unknown>) =>
         addressesMatch(address, String(tx.to ?? ""), "TRC20") &&
         tx.token_info &&
-        (tx.token_info as { address: string }).address === USDT_TRC20
+        (tx.token_info as { address: string }).address === tokenContract
     )
     .map((tx: Record<string, unknown>) => ({
       txHash: tx.transaction_id as string,
       amount: Number(tx.value) / 1e6,
-      currency: "USDT",
+      currency,
       network: "TRC20",
       confirmations: tx.block_timestamp ? required : 0,
       depositAddress: address,
@@ -173,8 +174,7 @@ async function pollEvm(
   apiKey: string,
   chainId = 1
 ): Promise<DetectedPayment[]> {
-  const contracts = TOKEN_CONTRACTS[network as keyof typeof TOKEN_CONTRACTS];
-  const contract = contracts?.[currency];
+  const contract = getTokenContract(currency, network);
 
   const url = buildEtherscanV2Url(apiKey, {
     module: "account",
@@ -221,18 +221,19 @@ async function pollEvm(
     }));
 }
 
-async function pollEvmUsdtViaRpc(
+async function pollEvmTokenViaRpc(
   address: string,
   network: string,
-  chain: NonNullable<ReturnType<typeof getEvmChain>>
+  chain: NonNullable<ReturnType<typeof getEvmChain>>,
+  currency: string
 ): Promise<DetectedPayment[]> {
   try {
-    const transfers = await pollEvmUsdtTransfersToAddress(address, chain);
-    recordPollSuccess(network, "USDT");
+    const transfers = await pollEvmTokenTransfersToAddress(address, chain, currency);
+    recordPollSuccess(network, currency);
     return transfers.map((t) => ({
       txHash: t.txHash,
       amount: t.amount,
-      currency: "USDT",
+      currency,
       network,
       confirmations: t.confirmations,
       depositAddress: address,
@@ -242,15 +243,15 @@ async function pollEvmUsdtViaRpc(
     const apiKey = process.env.ETHERSCAN_API_KEY;
     if (apiKey) {
       console.warn(
-        `[payment-poller] RPC USDT poll failed for ${network}/${address}, trying Etherscan:`,
+        `[payment-poller] RPC ${currency} poll failed for ${network}/${address}, trying Etherscan:`,
         rpcErr
       );
-      return pollEvm(address, "USDT", network, apiKey, chain.chainId);
+      return pollEvm(address, currency, network, apiKey, chain.chainId);
     }
 
     const msg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
-    console.warn(`[payment-poller] RPC USDT poll failed for ${network}/${address}: ${msg}`);
-    recordPollFailure(network, "USDT", msg);
+    console.warn(`[payment-poller] RPC ${currency} poll failed for ${network}/${address}: ${msg}`);
+    recordPollFailure(network, currency, msg);
     return [];
   }
 }
@@ -315,14 +316,17 @@ async function getBitcoinBlockHeight(): Promise<number> {
   return cachedBtcHeight || 0;
 }
 
-async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
+async function pollSolanaSpl(ownerAddress: string, currency: string): Promise<DetectedPayment[]> {
+  const mintAddress = getTokenContract(currency, "SPL");
+  if (!mintAddress) return [];
+
   const { Connection, PublicKey } = await import("@solana/web3.js");
   const { getAssociatedTokenAddress } = await import("@solana/spl-token");
 
   const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
   const owner = new PublicKey(ownerAddress);
-  const mint = new PublicKey(TOKEN_CONTRACTS.SPL.USDT);
+  const mint = new PublicKey(mintAddress);
 
   let ata: Awaited<ReturnType<typeof getAssociatedTokenAddress>>;
   try {
@@ -352,10 +356,10 @@ async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
     const post = tx.meta.postTokenBalances ?? [];
 
     const preBal = pre.find(
-      (b) => b.mint === TOKEN_CONTRACTS.SPL.USDT && b.owner === ownerAddress
+      (b) => b.mint === mintAddress && b.owner === ownerAddress
     );
     const postBal = post.find(
-      (b) => b.mint === TOKEN_CONTRACTS.SPL.USDT && b.owner === ownerAddress
+      (b) => b.mint === mintAddress && b.owner === ownerAddress
     );
 
     const preAmount = preBal?.uiTokenAmount.uiAmount ?? 0;
@@ -367,7 +371,7 @@ async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
     results.push({
       txHash: sig.signature,
       amount: delta,
-      currency: "USDT",
+      currency,
       network: "SPL",
       confirmations: sig.confirmationStatus === "finalized" ? 32 : 1,
       depositAddress: ownerAddress,
@@ -509,11 +513,11 @@ async function refreshTransactionConfirmations(
 ): Promise<number> {
   const required = getRequiredConfirmations(currency, network);
 
-  if (network === "TRC20" && currency === "USDT") {
-    return getTronTransferConfirmations(txHash);
+  if (network === "TRC20" && isStablecoin(currency)) {
+    return getTronTransferConfirmations(txHash, currency);
   }
 
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+  if (isEvmUsdtNetwork(network) && isStablecoin(currency)) {
     const chain = getEvmChain(network);
     if (!chain) return 0;
     try {
@@ -528,7 +532,7 @@ async function refreshTransactionConfirmations(
     }
   }
 
-  if (network === "SPL" && currency === "USDT") {
+  if (network === "SPL" && isStablecoin(currency)) {
     try {
       const { Connection } = await import("@solana/web3.js");
       const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
@@ -558,7 +562,7 @@ async function refreshTransactionConfirmations(
   return 0;
 }
 
-async function getTronTransferConfirmations(txHash: string): Promise<number> {
+async function getTronTransferConfirmations(txHash: string, currency: string): Promise<number> {
   const apiKey = process.env.TRONGRID_API_KEY;
   const res = await fetch(
     `https://api.trongrid.io/v1/transactions/${txHash}/events?limit=1`,
@@ -568,7 +572,7 @@ async function getTronTransferConfirmations(txHash: string): Promise<number> {
     const data = await res.json();
     const event = data.data?.[0] as { block_timestamp?: number } | undefined;
     if (event?.block_timestamp) {
-      return getRequiredConfirmations("USDT", "TRC20");
+      return getRequiredConfirmations(currency, "TRC20");
     }
   }
 
@@ -583,7 +587,7 @@ async function getTronTransferConfirmations(txHash: string): Promise<number> {
   if (!infoRes.ok) return 0;
 
   const info = (await infoRes.json()) as { blockNumber?: number; id?: string };
-  return info.blockNumber || info.id ? getRequiredConfirmations("USDT", "TRC20") : 0;
+  return info.blockNumber || info.id ? getRequiredConfirmations(currency, "TRC20") : 0;
 }
 
 async function getMerchantName(userId: string): Promise<string> {

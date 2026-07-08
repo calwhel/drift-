@@ -1,13 +1,12 @@
 import { decryptPrivateKey } from "./encryption";
-import { TOKEN_CONTRACTS } from "../constants";
+import { getTokenContract } from "../constants";
 import { Wallet, Contract, parseUnits } from "ethers";
-import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
+import { getEvmChain, getEvmTokenContract, getEvmTokenDecimals, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
 import { extractTronTxId } from "./tx-verify";
 
-const USDT_ERC20 = TOKEN_CONTRACTS.ERC20.USDT;
-const USDC_ERC20 = TOKEN_CONTRACTS.ERC20.USDC;
-const USDT_SPL_MINT = TOKEN_CONTRACTS.SPL.USDT;
+const USDT_ERC20 = getTokenContract("USDT", "ERC20")!;
+const USDC_ERC20 = getTokenContract("USDC", "ERC20")!;
 
 function normalizePrivateKey(privateKey: string): string {
   return privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
@@ -23,7 +22,15 @@ function solanaKeypairFromPrivateKey(privateKey: string) {
   return Keypair.fromSeed(bytes.slice(0, 32));
 }
 
-async function broadcastTrc20Usdt(privateKey: string, toAddress: string, amount: number): Promise<string> {
+async function broadcastTrc20Token(
+  privateKey: string,
+  toAddress: string,
+  amount: number,
+  currency: string
+): Promise<string> {
+  const tokenContract = getTokenContract(currency, "TRC20");
+  if (!tokenContract) throw new Error(`Unsupported TRC20 token: ${currency}`);
+
   const { TronWeb } = await import("tronweb");
   const { isTronRateLimitError } = await import("../blockchain/trongrid");
   const pk = normalizePrivateKey(privateKey);
@@ -39,7 +46,7 @@ async function broadcastTrc20Usdt(privateKey: string, toAddress: string, amount:
         privateKey: pk,
       });
 
-      const contract = await tronWeb.contract().at(TOKEN_CONTRACTS.TRC20.USDT);
+      const contract = await tronWeb.contract().at(tokenContract);
       const sunAmount = Math.round(amount * 1e6);
       const result = await contract.transfer(toAddress, sunAmount).send({
         feeLimit: 100_000_000,
@@ -56,11 +63,15 @@ async function broadcastTrc20Usdt(privateKey: string, toAddress: string, amount:
   throw new Error("TRC20 broadcast failed after retries");
 }
 
-async function broadcastSplUsdt(
+async function broadcastSplToken(
   privateKey: string,
   toOwnerAddress: string,
-  amount: number
+  amount: number,
+  currency: string
 ): Promise<string> {
+  const mintAddress = getTokenContract(currency, "SPL");
+  if (!mintAddress) throw new Error(`Unsupported SPL token: ${currency}`);
+
   const { Connection, PublicKey, Transaction, sendAndConfirmTransaction } = await import(
     "@solana/web3.js"
   );
@@ -74,7 +85,7 @@ async function broadcastSplUsdt(
   const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
   const connection = new Connection(rpc, "confirmed");
   const fromKeypair = solanaKeypairFromPrivateKey(privateKey);
-  const mint = new PublicKey(USDT_SPL_MINT);
+  const mint = new PublicKey(mintAddress);
   const toOwner = new PublicKey(toOwnerAddress);
 
   const fromAta = await getAssociatedTokenAddress(mint, fromKeypair.publicKey);
@@ -203,30 +214,37 @@ async function broadcastBitcoin(
   return broadcastRes.text();
 }
 
-async function broadcastEvmUsdt(
+async function broadcastEvmToken(
   privateKey: string,
   toAddress: string,
   amount: number,
+  currency: string,
   network: string
 ): Promise<string> {
   const chain = getEvmChain(network);
   if (!chain) throw new Error(`Unsupported EVM network: ${network}`);
 
+  const tokenContract = getEvmTokenContract(chain, currency);
+  const tokenDecimals = getEvmTokenDecimals(chain, currency);
+  if (!tokenContract || tokenDecimals == null) {
+    throw new Error(`Token ${currency} not supported on ${network}`);
+  }
+
   return withEvmRpc(chain, async (provider) => {
     const pk = privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
     const signer = new Wallet(pk, provider);
     const token = new Contract(
-      chain.usdtContract,
+      tokenContract,
       ["function transfer(address to, uint256 amount) returns (bool)"],
       signer
     );
     const tx = await token.transfer(
       toAddress,
-      parseUnits(amount.toFixed(chain.usdtDecimals), chain.usdtDecimals)
+      parseUnits(amount.toFixed(tokenDecimals), tokenDecimals)
     );
     const receipt = await tx.wait();
     if (!receipt || receipt.status !== 1) {
-      throw new Error("EVM USDT transfer reverted on-chain");
+      throw new Error(`EVM ${currency} transfer reverted on-chain`);
     }
     return receipt.hash as string;
   });
@@ -239,12 +257,12 @@ export async function broadcastFromPrivateKey(
   currency: string,
   network: string
 ): Promise<string> {
-  if (network === "TRC20" && currency === "USDT") {
-    return broadcastTrc20Usdt(privateKey, toAddress, amount);
+  if (network === "TRC20" && (currency === "USDT" || currency === "USDC")) {
+    return broadcastTrc20Token(privateKey, toAddress, amount, currency);
   }
 
-  if (network === "SPL" && currency === "USDT") {
-    return broadcastSplUsdt(privateKey, toAddress, amount);
+  if (network === "SPL" && (currency === "USDT" || currency === "USDC")) {
+    return broadcastSplToken(privateKey, toAddress, amount, currency);
   }
 
   if (network === "Solana" && currency === "SOL") {
@@ -255,8 +273,8 @@ export async function broadcastFromPrivateKey(
     return broadcastBitcoin(privateKey, toAddress, amount);
   }
 
-  if (isEvmUsdtNetwork(network) && currency === "USDT") {
-    return broadcastEvmUsdt(privateKey, toAddress, amount, network);
+  if (isEvmUsdtNetwork(network) && (currency === "USDT" || currency === "USDC")) {
+    return broadcastEvmToken(privateKey, toAddress, amount, currency, network);
   }
 
   if (network === "ERC20" && process.env.ETH_RPC_URL) {

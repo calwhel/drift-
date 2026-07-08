@@ -1,4 +1,4 @@
-/** EVM chain configuration for USDT — polled via Etherscan V2 multichain API */
+/** EVM chain configuration for USDT/USDC — polled via RPC and optional Etherscan */
 
 export interface EvmChainConfig {
   network: string;
@@ -8,6 +8,8 @@ export interface EvmChainConfig {
   nativeDecimals: number;
   usdtContract: string;
   usdtDecimals: number;
+  usdcContract: string;
+  usdcDecimals: number;
   confirmations: number;
   /** Native gas top-up before one ERC20 transfer */
   nativeTopUp: number;
@@ -28,6 +30,8 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeDecimals: 18,
     usdtContract: "0x55d398326f99059fF775485246999027B3197955",
     usdtDecimals: 18,
+    usdcContract: "0x8AC76A51cc950d9822BD4b59eA3ACEc7c4",
+    usdcDecimals: 18,
     confirmations: 15,
     nativeTopUp: 0.0005,
     nativeReserve: 0.0001,
@@ -44,6 +48,8 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeDecimals: 18,
     usdtContract: "0xc2132D05D31c914a87C6611C10748Ebcb32d0d41",
     usdtDecimals: 6,
+    usdcContract: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    usdcDecimals: 6,
     confirmations: 128,
     nativeTopUp: 0.05,
     nativeReserve: 0.01,
@@ -60,6 +66,8 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeDecimals: 18,
     usdtContract: "0xFd086bC7CD5C481DCC9EC4eb85f578c6b3228d1e0",
     usdtDecimals: 6,
+    usdcContract: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    usdcDecimals: 6,
     confirmations: 12,
     nativeTopUp: 0.0002,
     nativeReserve: 0.00005,
@@ -76,6 +84,8 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeDecimals: 18,
     usdtContract: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
     usdtDecimals: 6,
+    usdcContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    usdcDecimals: 6,
     confirmations: 12,
     nativeTopUp: 0.0001,
     nativeReserve: 0.00002,
@@ -92,6 +102,8 @@ export const EVM_USDT_CHAINS: Record<string, EvmChainConfig> = {
     nativeDecimals: 18,
     usdtContract: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
     usdtDecimals: 6,
+    usdcContract: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+    usdcDecimals: 6,
     confirmations: 12,
     nativeTopUp: 0.01,
     nativeReserve: 0.002,
@@ -110,6 +122,18 @@ export function getEvmChain(network: string): EvmChainConfig | null {
 
 export function isEvmUsdtNetwork(network: string): boolean {
   return network in EVM_USDT_CHAINS;
+}
+
+export function getEvmTokenContract(chain: EvmChainConfig, currency: string): string | null {
+  if (currency === "USDT") return chain.usdtContract;
+  if (currency === "USDC") return chain.usdcContract;
+  return null;
+}
+
+export function getEvmTokenDecimals(chain: EvmChainConfig, currency: string): number | null {
+  if (currency === "USDT") return chain.usdtDecimals;
+  if (currency === "USDC") return chain.usdcDecimals;
+  return null;
 }
 
 export function getEvmRpcUrl(chain: EvmChainConfig): string {
