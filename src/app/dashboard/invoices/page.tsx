@@ -26,7 +26,7 @@ export default function InvoicesPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
-  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
+  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("SPL");
   const isStablecoinCurrency = currency === "USDT" || currency === "USDC";
   const networkOptions = merchantNetworksForCurrency(currency);
   const [loading, setLoading] = useState(false);

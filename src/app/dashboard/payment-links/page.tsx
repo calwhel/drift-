@@ -43,7 +43,7 @@ export default function PaymentLinksPage() {
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
-  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
+  const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("SPL");
   const networkOptions = useMemo(() => merchantNetworksForCurrency(currency), [currency]);
   const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
@@ -253,8 +253,7 @@ export default function PaymentLinksPage() {
                             onClick={() => {
                               setCurrency(c);
                               setCurrencyOpen(false);
-                              if (c === "USDT") setStablecoinNetwork("TRC20");
-                              if (c === "USDC") setStablecoinNetwork("SPL");
+                              if (c === "USDT" || c === "USDC") setStablecoinNetwork("SPL");
                             }}
                             className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-white hover:bg-white/5"
                           >

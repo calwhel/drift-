@@ -107,7 +107,7 @@ export const paymentLinks = pgTable("payment_links", {
   description: text("description"),
   amount: numeric("amount", { precision: 20, scale: 8 }).notNull(),
   currency: varchar("currency", { length: 20 }).notNull(),
-  network: varchar("network", { length: 50 }).notNull().default("TRC20"),
+  network: varchar("network", { length: 50 }).notNull().default("SPL"),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   expiry: timestamp("expiry", { withTimezone: true }),
   redirectUrl: text("redirect_url"),
@@ -339,6 +339,33 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/** Ledger conversion between a user's custodial wallets (same USD value, different coin/network) */
+export const ledgerTransfers = pgTable("ledger_transfers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  fromWalletId: uuid("from_wallet_id")
+    .notNull()
+    .references(() => wallets.id, { onDelete: "restrict" }),
+  toWalletId: uuid("to_wallet_id")
+    .notNull()
+    .references(() => wallets.id, { onDelete: "restrict" }),
+  debitAmount: numeric("debit_amount", { precision: 20, scale: 8 }).notNull(),
+  creditAmount: numeric("credit_amount", { precision: 20, scale: 8 }).notNull(),
+  fromCurrency: varchar("from_currency", { length: 20 }).notNull(),
+  toCurrency: varchar("to_currency", { length: 20 }).notNull(),
+  fromNetwork: varchar("from_network", { length: 50 }).notNull(),
+  toNetwork: varchar("to_network", { length: 50 }).notNull(),
+  exchangeRate: numeric("exchange_rate", { precision: 20, scale: 8 }).notNull().default("1"),
+  feeAmount: numeric("fee_amount", { precision: 20, scale: 8 }).notNull().default("0"),
+  status: varchar("status", { length: 20 }).notNull().default("completed"),
+  createdBy: varchar("created_by", { length: 20 }).notNull().default("user"),
+  adminUserId: uuid("admin_user_id").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type PaymentLink = typeof paymentLinks.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
@@ -349,3 +376,4 @@ export type Invoice = typeof invoices.$inferSelect;
 export type Subscription = typeof subscriptions.$inferSelect;
 export type PlatformWallet = typeof platformWallets.$inferSelect;
 export type GasWallet = typeof gasWallets.$inferSelect;
+export type LedgerTransfer = typeof ledgerTransfers.$inferSelect;

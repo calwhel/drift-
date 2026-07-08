@@ -5,10 +5,9 @@ import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { WalletBalanceChart, type BalanceChartPoint } from "@/components/dashboard/wallet-balance-chart";
 import { CryptoIcon } from "@/components/crypto-icon";
-import { Icon, type IconName } from "@/components/icons";
+import { Icon } from "@/components/icons";
 import { cn, blockExplorerAddressUrl } from "@/lib/utils";
-import { MERCHANT_WALLET_NETWORKS, getNetworkLabel } from "@/lib/constants";
-import { walletQuickActions } from "@/lib/mock-data";
+import { MERCHANT_WALLET_NETWORKS, getNetworkLabel, isLegacyTronNetwork } from "@/lib/constants";
 
 const RANGES = ["7D", "30D", "90D", "1Y"];
 
@@ -23,13 +22,6 @@ const networkBadge: Record<string, string> = {
   SPL: "bg-[#14b8a629] text-[#5eead4]",
   Bitcoin: "bg-[#f59e0b29] text-[#fbbf24]",
   Solana: "bg-[#14b8a629] text-[#5eead4]",
-};
-
-const tileClass: Record<string, string> = {
-  purple: "tile-purple",
-  blue: "tile-blue",
-  green: "tile-green",
-  orange: "tile-orange",
 };
 
 interface WalletRow {
@@ -69,6 +61,15 @@ export default function WalletsPage() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [convertFromId, setConvertFromId] = useState<string | null>(null);
+  const [convertToId, setConvertToId] = useState("");
+  const [convertAmount, setConvertAmount] = useState("");
+  const [convertLoading, setConvertLoading] = useState(false);
+  const [convertQuote, setConvertQuote] = useState<{
+    debitAmount: number;
+    creditAmount: number;
+    feeAmount: number;
+  } | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [chartData, setChartData] = useState<BalanceChartPoint[]>([]);
 
@@ -156,6 +157,75 @@ export default function WalletsPage() {
 
   const walletForNetwork = (currency: string, network: string) =>
     wallets.find((w) => w.currency === currency && w.network === network);
+
+  const custodialWallets = wallets.filter(
+    (w) => w.walletType === "generated" && Number(w.balance) >= 0
+  );
+
+  const convertTargets = custodialWallets.filter((w) => w.id !== convertFromId);
+
+  useEffect(() => {
+    if (!convertFromId || !convertToId || !convertAmount || Number(convertAmount) <= 0) {
+      setConvertQuote(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch("/api/conversions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from_wallet_id: convertFromId,
+          to_wallet_id: convertToId,
+          amount: Number(convertAmount),
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setConvertQuote(d?.quote ?? null))
+        .catch(() => setConvertQuote(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [convertFromId, convertToId, convertAmount]);
+
+  const openConvert = (walletId: string) => {
+    setConvertFromId(walletId);
+    setConvertToId("");
+    setConvertAmount("");
+    setConvertQuote(null);
+    setError("");
+    setSuccess("");
+  };
+
+  const handleConvert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!convertFromId || !convertToId) return;
+    setConvertLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch("/api/conversions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from_wallet_id: convertFromId,
+          to_wallet_id: convertToId,
+          amount: Number(convertAmount),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Conversion failed");
+      setSuccess(
+        `Converted ${data.quote.debitAmount} → ${data.quote.creditAmount}`
+      );
+      setConvertFromId(null);
+      setConvertToId("");
+      setConvertAmount("");
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Conversion failed");
+    } finally {
+      setConvertLoading(false);
+    }
+  };
 
   const connectWallet = async (currency: string, network: string) => {
     const key = `${currency}|${network}`;
@@ -287,9 +357,10 @@ export default function WalletsPage() {
         )}
 
         <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
-          Drift-generated wallets are polled every 60 seconds. Send the correct token on the matching
-          network (e.g. USDT TRC20 to a TRC20 address). Balance updates after on-chain confirmations.
-          For checkout flows, create a payment link with the exact amount.
+          Drift-generated wallets are polled every 60 seconds. Use <strong>Convert</strong> to move
+          balances between USDT/USDC on Solana, Base, Polygon, and other supported networks — instant,
+          no platform gas. Withdraw from Solana or EVM networks for low fees; Tron (TRC20) is retired
+          for new wallets. Network fees are deducted from your withdrawal, not paid by Drift.
         </p>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -423,13 +494,25 @@ export default function WalletsPage() {
                           <td className="px-5 py-4">
                             <div className="flex items-center justify-end gap-2">
                               {w.walletType === "generated" && (
-                                <button
-                                  onClick={() => setWithdrawWalletId(w.id)}
-                                  disabled={Number(w.balance) <= 0}
-                                  className="rounded-lg border border-drift-border bg-drift-card px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/5 disabled:opacity-40"
-                                >
-                                  Withdraw
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => openConvert(w.id)}
+                                    disabled={Number(w.balance) <= 0}
+                                    className="rounded-lg border border-drift-border bg-drift-card px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/5 disabled:opacity-40"
+                                  >
+                                    Convert
+                                  </button>
+                                  <button
+                                    onClick={() => setWithdrawWalletId(w.id)}
+                                    disabled={Number(w.balance) <= 0}
+                                    className="rounded-lg border border-drift-border bg-drift-card px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/5 disabled:opacity-40"
+                                  >
+                                    Withdraw
+                                  </button>
+                                </>
+                              )}
+                              {isLegacyTronNetwork(w.network) && (
+                                <span className="text-[10px] text-amber-400">Legacy</span>
                               )}
                             </div>
                           </td>
@@ -461,22 +544,54 @@ export default function WalletsPage() {
             <div className="card-elevated p-5">
               <h3 className="mb-3 text-[15px] font-semibold text-white">Quick Actions</h3>
               <div className="space-y-2">
-                {walletQuickActions.map((action) => (
-                  <Link
-                    key={action.label}
-                    href={action.href}
-                    className="flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
-                  >
-                    <span className={cn("flex h-9 w-9 items-center justify-center rounded-xl", tileClass[action.color])}>
-                      <Icon name={action.icon as IconName} className="h-[18px] w-[18px]" />
+                <Link
+                  href="/dashboard/payouts"
+                  className="flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl tile-purple">
+                    <Icon name="ArrowUpRight" className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium text-white">Withdraw Funds</span>
+                    <span className="block text-[11px] text-drift-muted">
+                      Send to an external wallet (you pay network fee)
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13px] font-medium text-white">{action.label}</span>
-                      <span className="block text-[11px] text-drift-muted">{action.description}</span>
+                  </span>
+                  <Icon name="ChevronRight" className="h-4 w-4 text-drift-muted" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const withBalance = custodialWallets.find((w) => Number(w.balance) > 0);
+                    if (withBalance) openConvert(withBalance.id);
+                    else setError("No balance to convert — create a wallet and receive payments first");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 text-left transition-colors hover:bg-white/5"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl tile-blue">
+                    <Icon name="RefreshCcw" className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium text-white">Convert Coins</span>
+                    <span className="block text-[11px] text-drift-muted">
+                      Move USDT ↔ USDC between networks instantly
                     </span>
-                    <Icon name="ChevronRight" className="h-4 w-4 text-drift-muted" />
-                  </Link>
-                ))}
+                  </span>
+                  <Icon name="ChevronRight" className="h-4 w-4 text-drift-muted" />
+                </button>
+                <Link
+                  href="/dashboard/payment-links"
+                  className="flex items-center gap-3 rounded-xl border border-drift-border bg-drift-card p-3 transition-colors hover:bg-white/5"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl tile-green">
+                    <Icon name="Link2" className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-medium text-white">Payment Links</span>
+                    <span className="block text-[11px] text-drift-muted">Accept crypto on Solana, Base, Polygon</span>
+                  </span>
+                  <Icon name="ChevronRight" className="h-4 w-4 text-drift-muted" />
+                </Link>
               </div>
             </div>
 
@@ -600,6 +715,93 @@ export default function WalletsPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {convertFromId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <form onSubmit={handleConvert} className="card-elevated w-full max-w-md p-6">
+              <h3 className="mb-1 text-lg font-semibold text-white">Convert Balance</h3>
+              <p className="mb-4 text-[12px] text-drift-muted">
+                Instant ledger move at 1:1 between USDT and USDC. No on-chain gas from Drift.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-sm text-drift-muted">From</label>
+                  <p className="rounded-lg border border-drift-border bg-drift-bg px-3 py-2 text-sm text-white">
+                    {(() => {
+                      const w = wallets.find((x) => x.id === convertFromId);
+                      return w
+                        ? `${getNetworkLabel(w.currency, w.network)} — ${Number(w.balance).toFixed(4)} ${w.currency}`
+                        : "—";
+                    })()}
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-drift-muted">To wallet</label>
+                  <select
+                    value={convertToId}
+                    onChange={(e) => setConvertToId(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-drift-border bg-drift-bg px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">Select destination…</option>
+                    {convertTargets.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {getNetworkLabel(w.currency, w.network)} ({Number(w.balance).toFixed(4)}{" "}
+                        {w.currency})
+                      </option>
+                    ))}
+                  </select>
+                  {convertTargets.length === 0 && (
+                    <p className="mt-1 text-[11px] text-amber-400">
+                      Create a Solana, Base, or Polygon wallet first.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-drift-muted">Amount</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={convertAmount}
+                    onChange={(e) => setConvertAmount(e.target.value)}
+                    required
+                    max={
+                      wallets.find((x) => x.id === convertFromId)
+                        ? Number(wallets.find((x) => x.id === convertFromId)!.balance)
+                        : undefined
+                    }
+                    className="w-full rounded-lg border border-drift-border bg-drift-bg px-3 py-2 text-white"
+                  />
+                </div>
+                {convertQuote && (
+                  <p className="rounded-lg border border-drift-border bg-drift-bg/50 px-3 py-2 text-[12px] text-drift-muted">
+                    You receive{" "}
+                    <span className="font-semibold text-white">
+                      {convertQuote.creditAmount.toFixed(4)}
+                    </span>{" "}
+                    (fee: {convertQuote.feeAmount})
+                  </p>
+                )}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="submit"
+                  disabled={convertLoading || !convertQuote}
+                  className="flex-1 rounded-lg bg-[#7c3aed] py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {convertLoading ? "Converting…" : "Convert now"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConvertFromId(null)}
+                  className="rounded-lg border border-drift-border px-4 py-2 text-sm text-drift-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         )}
 

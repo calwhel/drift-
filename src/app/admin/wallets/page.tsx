@@ -65,7 +65,7 @@ export default function AdminWalletsPage() {
   const [copiedGas, setCopiedGas] = useState(false);
   const [form, setForm] = useState({
     currency: "USDT",
-    network: "TRC20",
+    network: "SPL",
     address: "",
     label: "",
   });
@@ -203,8 +203,15 @@ export default function AdminWalletsPage() {
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <h2 className="section-title">Tron Gas Wallet (TRX)</h2>
-                <p className="mt-1 text-2xs text-drift-muted">{gasWallets.tron.message}</p>
+                <h2 className="section-title">Tron Gas Wallet (TRX) — Legacy only</h2>
+                <p className="mt-1 text-2xs text-drift-muted">
+                  Tron is retired for new merchants. This wallet only serves existing TRC20 withdrawals
+                  and admin on-chain sweeps. Use{" "}
+                  <a href="/admin/conversions" className="text-drift-purple hover:underline">
+                    Conversions
+                  </a>{" "}
+                  to move ledger balances off Tron.
+                </p>
                 {gasWallets.tron.address ? (
                   <>
                     <p className="mt-3 break-all font-mono text-xs text-white">{gasWallets.tron.address}</p>

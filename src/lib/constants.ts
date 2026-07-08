@@ -6,9 +6,8 @@ import { EVM_USDT_CHAINS } from "./evm/chains";
 export const STABLECOIN_CURRENCIES = ["USDT", "USDC"] as const;
 export type StablecoinCurrency = (typeof STABLECOIN_CURRENCIES)[number];
 
-/** Networks merchants can use for USDT and USDC */
-export const STABLECOIN_NETWORKS = [
-  { network: "TRC20", label: "TRC20 (Tron)" },
+/** Active USDT networks for new merchants (Tron removed) */
+export const USDT_MERCHANT_NETWORKS = [
   { network: "SPL", label: "Solana (SPL)" },
   ...Object.values(EVM_USDT_CHAINS).map((c) => ({
     network: c.network,
@@ -16,24 +15,30 @@ export const STABLECOIN_NETWORKS = [
   })),
 ] as const;
 
-/** @deprecated use STABLECOIN_NETWORKS */
-export const USDT_NETWORKS = STABLECOIN_NETWORKS;
-
-export type UsdtNetwork = (typeof STABLECOIN_NETWORKS)[number]["network"];
-export type StablecoinNetwork = UsdtNetwork;
-
-/** USDC is enabled on Solana, Base, and Polygon (launch networks) */
+/** USDC launch networks */
 export const USDC_MERCHANT_NETWORKS = [
   { network: "SPL", label: "USDC (Solana)" },
   { network: "Base", label: "USDC (Base)" },
   { network: "Polygon", label: "USDC (Polygon)" },
 ] as const;
 
+/** Runtime + poller networks (includes retired Tron for legacy balances) */
+export const ALL_USDT_NETWORKS = [
+  { network: "TRC20", label: "TRC20 (Tron — legacy)" },
+  ...USDT_MERCHANT_NETWORKS,
+] as const;
+
+/** @deprecated use USDT_MERCHANT_NETWORKS */
+export const STABLECOIN_NETWORKS = USDT_MERCHANT_NETWORKS;
+export const USDT_NETWORKS = USDT_MERCHANT_NETWORKS;
+
+export type UsdtNetwork = (typeof USDT_MERCHANT_NETWORKS)[number]["network"];
+export type StablecoinNetwork = UsdtNetwork;
 export type UsdcNetwork = (typeof USDC_MERCHANT_NETWORKS)[number]["network"];
 
 /** Networks available for new merchant wallets and payment links */
 export const MERCHANT_WALLET_NETWORKS = [
-  ...STABLECOIN_NETWORKS.map((n) => ({
+  ...USDT_MERCHANT_NETWORKS.map((n) => ({
     currency: "USDT" as const,
     network: n.network,
     label: n.label,
@@ -47,13 +52,16 @@ export const MERCHANT_WALLET_NETWORKS = [
 
 export function merchantNetworksForCurrency(currency: string) {
   if (currency === "USDC") return USDC_MERCHANT_NETWORKS;
-  return STABLECOIN_NETWORKS;
+  return USDT_MERCHANT_NETWORKS;
 }
 
 export function defaultNetworkForCurrency(currency: string): string {
-  if (currency === "USDT") return "TRC20";
-  if (currency === "USDC") return "SPL";
-  return NETWORKS[currency as SupportedCurrency]?.network ?? "TRC20";
+  if (currency === "USDT" || currency === "USDC") return "SPL";
+  return NETWORKS[currency as SupportedCurrency]?.network ?? "SPL";
+}
+
+export function isLegacyTronNetwork(network: string): boolean {
+  return network === "TRC20";
 }
 
 export type WalletType = "connected" | "generated";
@@ -63,7 +71,7 @@ export const PLATFORM_WALLET_NETWORKS = MERCHANT_WALLET_NETWORKS;
 
 /** Legacy default network per currency (used when network omitted) */
 export const NETWORKS = {
-  USDT: { network: "TRC20", confirmations: 1, decimals: 6 },
+  USDT: { network: "SPL", confirmations: 32, decimals: 6 },
   USDC: { network: "SPL", confirmations: 32, decimals: 6 },
   BTC: { network: "Bitcoin", confirmations: 3, decimals: 8 },
   ETH: { network: "ERC20", confirmations: 12, decimals: 18 },
@@ -131,7 +139,10 @@ export function isStablecoin(currency: string): currency is StablecoinCurrency {
 }
 
 export function isStablecoinNetwork(network: string): boolean {
-  return STABLECOIN_NETWORKS.some((n) => n.network === network);
+  return (
+    ALL_USDT_NETWORKS.some((n) => n.network === network) ||
+    USDC_MERCHANT_NETWORKS.some((n) => n.network === network)
+  );
 }
 
 export function getTokenContract(currency: string, network: string): string | undefined {
@@ -143,6 +154,7 @@ export function getNetworkLabel(currency: string, network: string): string {
     (n) => n.currency === currency && n.network === network
   );
   if (found) return found.label;
+  if (network === "TRC20") return `${currency} (TRC20 — legacy)`;
   if (currency === "USDT" && network === "ERC20") return "USDT (ERC20 — legacy)";
   return `${currency} (${network})`;
 }
@@ -157,11 +169,17 @@ export function disabledNetworkMessage(network: string): string | null {
   if (network === "ERC20") {
     return "Ethereum (ERC20) is disabled. Use USDT or USDC on Solana, Base, Polygon, or other supported networks.";
   }
+  if (network === "TRC20") {
+    return "Tron (TRC20) is retired for new wallets and payment links. Convert your balance to Solana, Base, or Polygon.";
+  }
   return null;
 }
 
 export function isLedgerOnlyStablecoin(currency: string, network: string): boolean {
-  return isStablecoin(currency) && isMerchantNetworkEnabled(currency, network);
+  return (
+    isStablecoin(currency) &&
+    (isMerchantNetworkEnabled(currency, network) || isLegacyTronNetwork(network))
+  );
 }
 
 /** @deprecated use isLedgerOnlyStablecoin */

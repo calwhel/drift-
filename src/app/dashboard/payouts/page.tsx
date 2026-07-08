@@ -80,7 +80,8 @@ export default function PayoutsPage() {
         setWallets(rows);
         const withBalance = rows.filter((w: WalletOption) => Number(w.balance) > 0);
         const preferred =
-          withBalance.find((w: WalletOption) => w.currency === "USDT" && w.network === "TRC20") ??
+          withBalance.find((w: WalletOption) => w.currency === "USDT" && w.network === "SPL") ??
+          withBalance.find((w: WalletOption) => w.currency === "USDC" && w.network === "SPL") ??
           withBalance[0] ??
           rows[0];
         if (preferred) setWalletId(preferred.id);
