@@ -1,11 +1,18 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.WALLET_ENCRYPTION_KEY ?? process.env.NEXTAUTH_SECRET;
-  if (!secret) {
+  const primary = process.env.WALLET_ENCRYPTION_KEY;
+  if (primary) {
+    return scryptSync(primary, "drift-wallet-encryption-v1", 32);
+  }
+  const fallback = process.env.NEXTAUTH_SECRET;
+  if (!fallback) {
     throw new Error("WALLET_ENCRYPTION_KEY or NEXTAUTH_SECRET must be set");
   }
-  return scryptSync(secret, "drift-wallet-encryption-v1", 32);
+  console.warn(
+    "[encryption] WALLET_ENCRYPTION_KEY not set — using NEXTAUTH_SECRET fallback. Set a dedicated key in production."
+  );
+  return scryptSync(fallback, "drift-wallet-encryption-v1", 32);
 }
 
 export function encryptPrivateKey(privateKey: string): string {

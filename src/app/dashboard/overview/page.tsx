@@ -74,6 +74,7 @@ export default function OverviewPage() {
   const [wallets, setWallets] = useState<WalletRow[]>([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -83,17 +84,27 @@ export default function OverviewPage() {
     if (status !== "authenticated") return;
 
     Promise.all([
-      fetch("/api/dashboard/stats").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/wallets").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/dashboard/stats").then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load dashboard stats");
+        }
+        return r.json();
+      }),
+      fetch("/api/wallets").then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load wallets");
+        }
+        return r.json();
+      }),
     ])
       .then(([statsData, walletsData]) => {
-        if (statsData) setStats(statsData);
-        if (walletsData) {
-          setWallets(walletsData.wallets ?? []);
-          setTotalBalance(walletsData.totalBalance ?? 0);
-        }
+        setStats(statsData);
+        setWallets(walletsData.wallets ?? []);
+        setTotalBalance(walletsData.totalBalance ?? 0);
       })
-      .catch(console.error)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load dashboard"))
       .finally(() => setLoading(false));
   }, [status, router]);
 
@@ -126,6 +137,11 @@ export default function OverviewPage() {
         <Suspense fallback={null}>
           <AdminDeniedBanner />
         </Suspense>
+        {loadError && (
+          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         <StatsRow live={liveStats} />
 
         <div className="grid gap-4 lg:grid-cols-3">

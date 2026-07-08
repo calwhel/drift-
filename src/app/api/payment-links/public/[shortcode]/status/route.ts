@@ -31,10 +31,7 @@ export async function GET(
     .orderBy(desc(transactions.createdAt))
     .limit(1);
 
-  const paymentStatus =
-    tx?.status === "underpaid" || tx?.status === "overpaid"
-      ? "confirming"
-      : tx?.status ?? (link.status === "paid" ? "completed" : "pending");
+  const paymentStatus = tx?.status ?? (link.status === "paid" ? "completed" : "pending");
 
   return NextResponse.json({
     status: paymentStatus,
@@ -44,7 +41,8 @@ export async function GET(
     network: link.network,
     redirect_url: link.redirectUrl,
     paid_at: link.paidAt,
-    transaction_id: tx?.id ?? null,
     confirmations: tx?.confirmations ?? "0",
+    payment_sufficient:
+      paymentStatus !== "underpaid" && paymentStatus !== "pending",
   });
 }

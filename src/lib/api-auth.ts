@@ -39,3 +39,17 @@ export async function authenticateRequest(req: NextRequest) {
     return null;
   }
 }
+
+/** Sensitive money operations require session + 2FA (not API keys). */
+export async function requireSessionAuth(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+  try {
+    const user = await requireTwoFactorVerified();
+    return { userId: user.id, via: "session" as const };
+  } catch {
+    return null;
+  }
+}

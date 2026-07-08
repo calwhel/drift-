@@ -6,6 +6,7 @@ import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
 import { getTronGasWalletStatus } from "@/lib/wallet/gas-wallet";
 import { getSplGasWalletStatus } from "@/lib/wallet/spl-gas";
 import { getAllEvmGasWalletStatuses } from "@/lib/evm/gas";
+import { getPollHealthSnapshot, isPollDegraded } from "@/lib/blockchain/poll-health";
 
 const CRITICAL_TABLES = [
   "users",
@@ -16,6 +17,8 @@ const CRITICAL_TABLES = [
   "settlements",
   "derivation_counter",
   "gas_wallets",
+  "poller_lease",
+  "rate_limit_buckets",
 ];
 
 async function tableExists(name: string): Promise<boolean> {
@@ -36,16 +39,11 @@ export async function GET() {
   const checks: Record<string, string> = {
     database_url: process.env.DATABASE_URL ? "set" : "missing",
     nextauth_secret: process.env.NEXTAUTH_SECRET ? "set" : "missing",
-    nextauth_url: process.env.NEXTAUTH_URL ? "set" : "missing",
-    telegram_bot_token: telegram.bot_token,
-    telegram_admin_chat_id: telegram.admin_chat_id,
-    etherscan_api_key: process.env.ETHERSCAN_API_KEY ? "set" : "missing",
-    trongrid_api_key: process.env.TRONGRID_API_KEY ? "set" : "missing",
-    solana_rpc_url: process.env.SOLANA_RPC_URL ? "set" : "default",
-    cron_secret: process.env.CRON_SECRET ? "set" : "missing",
-    email_provider: process.env.RESEND_API_KEY ? "set" : "missing",
+    wallet_encryption_key: process.env.WALLET_ENCRYPTION_KEY ? "set" : "missing",
     master_wallet_mnemonic: isMasterWalletConfigured() ? "set" : "missing",
+    etherscan_api_key: process.env.ETHERSCAN_API_KEY ? "set" : "missing",
     payment_poller: "in-process (60s)",
+    telegram: telegram.bot_token === "set" ? "configured" : "optional",
   };
 
   const body: Record<string, unknown> = {
@@ -61,6 +59,16 @@ export async function GET() {
 
   if (!process.env.NEXTAUTH_SECRET) {
     body.error = "NEXTAUTH_SECRET is not configured";
+    return unhealthy(body);
+  }
+
+  if (!isMasterWalletConfigured()) {
+    body.error = "MASTER_WALLET_MNEMONIC is not configured — payment links cannot be created safely";
+    return unhealthy(body);
+  }
+
+  if (!process.env.ETHERSCAN_API_KEY) {
+    body.error = "ETHERSCAN_API_KEY missing — EVM USDT payment detection is disabled";
     return unhealthy(body);
   }
 
@@ -95,27 +103,27 @@ export async function GET() {
 
     try {
       const evmGas = await getAllEvmGasWalletStatuses();
-      body.evm_gas_wallets = evmGas.map((g) => ({
-        network: g.network,
-        ready: g.ready,
-        nativeSymbol: g.nativeSymbol,
-        nativeBalance: g.nativeBalance,
-        address: g.address,
-      }));
-      const evmReady = evmGas.every((g) => g.ready);
-      checks.evm_gas_wallets = evmReady ? "ready" : "needs_funding";
+      checks.evm_gas_wallets = evmGas.every((g) => g.ready) ? "ready" : "needs_funding";
     } catch {
       checks.evm_gas_wallets = "unknown";
     }
 
-    if (!isMasterWalletConfigured()) {
-      body.warning = "MASTER_WALLET_MNEMONIC not set — unique deposit addresses disabled";
+    const pollHealth = getPollHealthSnapshot();
+    if (pollHealth.length > 0) {
+      body.poll_health = pollHealth.map((h) => ({
+        network: h.network,
+        failures: h.failures,
+        lastError: h.lastError,
+      }));
     }
 
-    if (!process.env.ETHERSCAN_API_KEY) {
-      body.warning =
-        (body.warning ? `${body.warning}; ` : "") +
-        "ETHERSCAN_API_KEY missing — EVM USDT payments will not be detected";
+    if (isPollDegraded()) {
+      body.error = "Payment detection is degraded — blockchain API failures detected";
+      return unhealthy(body);
+    }
+
+    if (!process.env.WALLET_ENCRYPTION_KEY) {
+      body.warning = "WALLET_ENCRYPTION_KEY not set — using NEXTAUTH_SECRET fallback for wallet encryption";
     }
 
     return NextResponse.json({

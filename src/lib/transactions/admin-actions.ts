@@ -2,8 +2,9 @@ import { eq } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets } from "@/lib/db";
 import { completeTransaction } from "@/lib/blockchain/poller";
 import { fetchOnChainBalance } from "@/lib/blockchain/balances";
-import { TOKEN_CONTRACTS } from "@/lib/constants";
+import { TOKEN_CONTRACTS, getRequiredConfirmations } from "@/lib/constants";
 import { isEvmUsdtNetwork } from "@/lib/evm/chains";
+import { verifyTronTransactionSuccess, verifyEvmTransactionSuccess } from "@/lib/wallet/tx-verify";
 
 const USDT_TRC20 = TOKEN_CONTRACTS.TRC20.USDT;
 
@@ -36,7 +37,34 @@ export async function adminCompleteTransaction(transactionId: string) {
   if (!tx) throw new Error("Transaction not found");
   if (tx.status === "completed") return tx;
 
+  if (!tx.txHash?.trim()) {
+    throw new Error("Cannot complete transaction without an on-chain tx hash");
+  }
+
+  const required = getRequiredConfirmations(tx.currency, tx.network);
+  const current = Number(tx.confirmations ?? 0);
+
+  if (current < required) {
+    if (tx.network === "TRC20" && tx.currency === "USDT") {
+      await verifyTronTransactionSuccess(tx.txHash, 30_000);
+    } else if (isEvmUsdtNetwork(tx.network) && tx.currency === "USDT") {
+      await verifyEvmTransactionSuccess(tx.txHash, tx.network, 30_000);
+    } else {
+      throw new Error(
+        `Transaction has ${current} confirmations but needs ${required} — wait for on-chain confirmation`
+      );
+    }
+  }
+
   await completeTransaction(transactionId);
+
+  const [updated] = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.id, transactionId))
+    .limit(1);
+
+  return updated ?? tx;
 }
 
 interface OnChainTransfer {

@@ -20,7 +20,7 @@ function getBaseUrl() {
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const limit = rateLimit(`forgot-password:${ip}`, 5, 60_000);
+  const limit = await rateLimit(`forgot-password:${ip}`, 5, 60_000);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
   }
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const { email } = schema.parse(body);
     const normalized = email.trim().toLowerCase();
 
-    const emailLimit = rateLimit(`forgot-password:email:${normalized}`, 3, 60_000);
+    const emailLimit = await rateLimit(`forgot-password:email:${normalized}`, 3, 60_000);
     if (!emailLimit.allowed) {
       return NextResponse.json(
         { ok: true, message: "If an account exists, a reset link has been sent." },

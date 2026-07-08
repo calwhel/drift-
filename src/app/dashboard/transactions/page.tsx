@@ -59,6 +59,7 @@ function TransactionsPageContent() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     const q = searchParams.get("search");
@@ -86,12 +87,18 @@ function TransactionsPageContent() {
 
     setLoading(true);
     fetch(`/api/transactions?${params}`)
-      .then((r) => (r.ok ? r.json() : { data: [], total: 0 }))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load transactions");
+        }
+        return r.json();
+      })
       .then((res) => {
         setTransactions(res.data?.map(mapTx) ?? []);
         setTotal(res.total ?? 0);
       })
-      .catch(console.error)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load transactions"))
       .finally(() => setLoading(false));
   }, [status, page, statusFilter, debouncedSearch]);
 
@@ -149,6 +156,11 @@ function TransactionsPageContent() {
       <DashboardHeader title="Transactions" subtitle={`${total} total`} />
 
       <div className="space-y-6 p-4 sm:p-6">
+        {loadError && (
+          <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />

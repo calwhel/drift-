@@ -3,6 +3,7 @@ import { db, gasWallets } from "../db";
 import { fetchTronAccount } from "@/lib/blockchain/trongrid";
 import { deriveDepositAddress, derivePrivateKey } from "./derive";
 import { isMasterWalletConfigured } from "./master-wallet";
+import { TRON_GAS_DERIVATION_INDEX } from "../derivation-indices";
 
 export const TRON_GAS_NETWORK = "TRC20";
 
@@ -48,7 +49,9 @@ export async function isTronAccountActivated(address: string): Promise<boolean> 
 }
 
 export function getTronGasDerivationIndex(): number {
-  return Number(process.env.TRON_GAS_DERIVATION_INDEX ?? 0);
+  const env = process.env.TRON_GAS_DERIVATION_INDEX;
+  if (env != null && env !== "") return Number(env);
+  return TRON_GAS_DERIVATION_INDEX;
 }
 
 /** Create or refresh the admin gas wallet record from the master mnemonic */

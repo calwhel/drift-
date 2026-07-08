@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   }
 
   const ip = req.headers.get("x-forwarded-for") ?? "unknown";
-  const limit = rateLimit(`register:${ip}`, 10, 60_000);
+  const limit = await rateLimit(`register:${ip}`, 10, 60_000);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
   }

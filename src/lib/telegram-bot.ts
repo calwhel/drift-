@@ -212,7 +212,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
 }
 
 export function isValidTelegramWebhookSecret(header: string | null): boolean {
-  if (!isTelegramConfigured()) return true;
+  if (!isTelegramConfigured()) return false;
 
   const secret = getTelegramWebhookSecret();
   if (!secret || !header) return false;

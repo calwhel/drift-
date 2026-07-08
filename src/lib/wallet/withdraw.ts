@@ -3,7 +3,7 @@ import { db, withdrawals, wallets } from "../db";
 import { fetchOnChainBalance } from "../blockchain/balances";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
 import { derivePrivateKey } from "./derive";
-import { findTrc20DepositSourcesWithBalance, getTrc20WithdrawableOnChain } from "./tron-deposits";
+import { findTrc20DepositSourcesWithBalance } from "./tron-deposits";
 import { isTronRateLimitError } from "../blockchain/trongrid";
 import { findEvmDepositSourcesWithBalance } from "../evm/deposits";
 import { findSplDepositSourcesWithBalance } from "./spl-deposits";
@@ -14,10 +14,11 @@ import { isEvmUsdtNetwork } from "../evm/chains";
 import {
   assertPositiveNetAmount,
   isValidTxHashForNetwork,
+  isVerifyAmbiguousError,
   verifyWithdrawalTransactions,
   verifyTronTransactionSuccess,
+  verifyEvmTransactionSuccess,
 } from "./tx-verify";
-
 class PartialWithdrawalError extends Error {
   constructor(
     message: string,
@@ -50,6 +51,19 @@ function assertWithdrawalBroadcastResult(
   if (!txHash?.trim()) {
     throw new Error("Withdrawal broadcast returned no transaction id");
   }
+}
+
+async function appendWithdrawalTxHash(
+  withdrawalId: string,
+  newHash: string,
+  existing?: string | null
+): Promise<string> {
+  const combined = existing?.trim() ? `${existing},${newHash}` : newHash;
+  await db
+    .update(withdrawals)
+    .set({ txHash: combined, error: null })
+    .where(eq(withdrawals.id, withdrawalId));
+  return combined;
 }
 
 async function refundWithdrawalBalance(
@@ -97,10 +111,22 @@ async function broadcastTrc20UsdtWithdrawal(
 }
 
 async function processTrc20UsdtWithdrawal(
-  withdrawal: { toAddress: string; amount: string; feeAmount: string | null; currency: string; network: string },
+  withdrawal: {
+    id: string;
+    toAddress: string;
+    amount: string;
+    feeAmount: string | null;
+    currency: string;
+    network: string;
+    txHash: string | null;
+  },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
+  if (withdrawal.txHash?.trim()) {
+    return withdrawal.txHash;
+  }
+
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
@@ -119,6 +145,7 @@ async function processTrc20UsdtWithdrawal(
         sendAmount
       );
       txHashes.push(hash);
+      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
     }
 
@@ -148,6 +175,7 @@ async function processTrc20UsdtWithdrawal(
           sendAmount
         );
         txHashes.push(hash);
+        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
       }
     }
@@ -195,10 +223,20 @@ async function broadcastEvmUsdtWithdrawal(
 }
 
 async function processEvmUsdtWithdrawal(
-  withdrawal: { toAddress: string; amount: string; feeAmount: string | null; currency: string; network: string },
+  withdrawal: {
+    id: string;
+    toAddress: string;
+    amount: string;
+    feeAmount: string | null;
+    currency: string;
+    network: string;
+    txHash: string | null;
+  },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
+  if (withdrawal.txHash?.trim()) return withdrawal.txHash;
+
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
@@ -219,14 +257,12 @@ async function processEvmUsdtWithdrawal(
         sendAmount
       );
       txHashes.push(hash);
+      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
     }
 
     if (remaining > 0.000001) {
-      const depositSources = await findEvmDepositSourcesWithBalance(
-        wallet.userId,
-        network
-      );
+      const depositSources = await findEvmDepositSourcesWithBalance(wallet.userId, network);
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
@@ -250,6 +286,7 @@ async function processEvmUsdtWithdrawal(
           sendAmount
         );
         txHashes.push(hash);
+        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
       }
     }
@@ -284,14 +321,27 @@ async function broadcastSplUsdtWithdrawal(
   amount: number
 ): Promise<string> {
   await fundSolIfNeeded(fromAddress);
-  return broadcastFromPrivateKey(privateKey, toAddress, amount, "USDT", "SPL");
+  const txHash = await broadcastFromPrivateKey(privateKey, toAddress, amount, "USDT", "SPL");
+  const { reclaimSolToGasWallet } = await import("./spl-gas");
+  await reclaimSolToGasWallet(privateKey, fromAddress);
+  return txHash;
 }
 
 async function processSplUsdtWithdrawal(
-  withdrawal: { toAddress: string; amount: string; feeAmount: string | null; currency: string; network: string },
+  withdrawal: {
+    id: string;
+    toAddress: string;
+    amount: string;
+    feeAmount: string | null;
+    currency: string;
+    network: string;
+    txHash: string | null;
+  },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
+  if (withdrawal.txHash?.trim()) return withdrawal.txHash;
+
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
@@ -310,6 +360,7 @@ async function processSplUsdtWithdrawal(
         sendAmount
       );
       txHashes.push(hash);
+      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
     }
 
@@ -337,6 +388,7 @@ async function processSplUsdtWithdrawal(
           sendAmount
         );
         txHashes.push(hash);
+        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
       }
     }
@@ -375,7 +427,7 @@ function isConfirmationPendingError(err: unknown): boolean {
   return /not confirmed on-chain in time/i.test(msg);
 }
 
-export { getTrc20WithdrawableOnChain };
+export { getWithdrawableOnChain as getTrc20WithdrawableOnChain } from "./withdrawable";
 
 /** Fix withdrawals wrongly marked completed without a valid on-chain transaction. */
 async function repairInvalidCompletedWithdrawals(): Promise<number> {
@@ -396,6 +448,14 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
     if (!invalid && w.network === "TRC20" && w.currency === "USDT") {
       try {
         await verifyTronTransactionSuccess(primaryHash, 20_000);
+      } catch {
+        invalid = true;
+      }
+    }
+
+    if (!invalid && isEvmUsdtNetwork(w.network) && w.currency === "USDT") {
+      try {
+        await verifyEvmTransactionSuccess(primaryHash, w.network, 20_000);
       } catch {
         invalid = true;
       }
@@ -489,6 +549,7 @@ export async function processPendingWithdrawals(): Promise<number> {
           withdrawal.currency,
           withdrawal.network
         );
+        await appendWithdrawalTxHash(withdrawal.id, txHash);
       }
 
       assertWithdrawalBroadcastResult(txHash, withdrawal);
@@ -502,9 +563,21 @@ export async function processPendingWithdrawals(): Promise<number> {
     } catch (err) {
       if (err instanceof PartialWithdrawalError) {
         netSent = err.netSent;
+        if (txHash) {
+          await db
+            .update(withdrawals)
+            .set({
+              txHash,
+              error: err instanceof Error ? err.message : "Partial withdrawal broadcast",
+            })
+            .where(eq(withdrawals.id, withdrawal.id));
+          continue;
+        }
       }
 
-      if (typeof txHash !== "undefined" && isConfirmationPendingError(err)) {
+      if (
+        (typeof txHash !== "undefined" && (isConfirmationPendingError(err) || isVerifyAmbiguousError(err)))
+      ) {
         await db
           .update(withdrawals)
           .set({

@@ -138,13 +138,16 @@ export const transactions = pgTable(
     netAmount: numeric("net_amount", { precision: 20, scale: 8 }),
     customerEmail: varchar("customer_email", { length: 255 }),
     confirmations: numeric("confirmations", { precision: 10, scale: 0 }).default("0"),
+    balanceCreditedAt: timestamp("balance_credited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [uniqueIndex("tx_hash_unique").on(t.txHash)]
 );
 
-export const settlements = pgTable("settlements", {
+export const settlements = pgTable(
+  "settlements",
+  {
   id: uuid("id").primaryKey().defaultRandom(),
   transactionId: uuid("transaction_id")
     .notNull()
@@ -164,6 +167,21 @@ export const settlements = pgTable("settlements", {
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("settlements_tx_type_unique").on(t.transactionId, t.type)]
+);
+
+export const pollerLease = pgTable("poller_lease", {
+  id: integer("id").primaryKey().default(1),
+  holderId: text("holder_id"),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const rateLimitBuckets = pgTable("rate_limit_buckets", {
+  bucketKey: text("bucket_key").primaryKey(),
+  count: integer("count").notNull().default(1),
+  windowStart: timestamp("window_start", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const withdrawals = pgTable("withdrawals", {

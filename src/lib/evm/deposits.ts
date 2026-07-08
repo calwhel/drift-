@@ -45,6 +45,8 @@ export async function findEvmDepositSourcesWithBalance(
 
     if (!addressMap.has(address)) {
       addressMap.set(address, link.derivationIndex ?? null);
+    } else if (link.derivationIndex != null) {
+      addressMap.set(address, link.derivationIndex);
     }
   }
 

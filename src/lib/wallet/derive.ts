@@ -8,6 +8,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, derivationCounter } from "../db";
 import { defaultNetworkForCurrency } from "../constants";
 import { getMasterWalletMnemonic } from "./master-wallet";
+import { MERCHANT_DERIVATION_START } from "../derivation-indices";
 
 const EVM_PATH = (i: number) => `m/44'/60'/0'/0/${i}`;
 
@@ -99,16 +100,18 @@ export function derivePrivateKey(derivationIndex: number, network: string): stri
 }
 
 export async function getNextDerivationIndex(): Promise<number> {
+  // nextIndex is always one past the index being allocated; start at 2 so first merchant gets index 1 (index 0 = TRON gas)
   await db
     .insert(derivationCounter)
-    .values({ id: 1, nextIndex: 1 })
+    .values({ id: 1, nextIndex: MERCHANT_DERIVATION_START + 1 })
     .onConflictDoNothing();
 
   const [row] = await db
     .update(derivationCounter)
-    .set({ nextIndex: sql`${derivationCounter.nextIndex} + 1` })
+    .set({ nextIndex: sql`GREATEST(${derivationCounter.nextIndex}, ${MERCHANT_DERIVATION_START + 1}) + 1` })
     .where(eq(derivationCounter.id, 1))
     .returning({ nextIndex: derivationCounter.nextIndex });
 
-  return (row?.nextIndex ?? 1) - 1;
+  const allocated = (row?.nextIndex ?? MERCHANT_DERIVATION_START + 1) - 1;
+  return Math.max(allocated, MERCHANT_DERIVATION_START);
 }
