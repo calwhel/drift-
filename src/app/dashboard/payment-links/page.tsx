@@ -8,7 +8,7 @@ import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
-import { STABLECOIN_NETWORKS, getNetworkLabel, type StablecoinNetwork } from "@/lib/constants";
+import { merchantNetworksForCurrency, getNetworkLabel, type StablecoinNetwork } from "@/lib/constants";
 
 const CURRENCIES = ["USDT", "USDC"];
 const EXPIRY_OPTIONS: Record<string, number | null> = {
@@ -44,6 +44,7 @@ export default function PaymentLinksPage() {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USDT");
   const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
+  const networkOptions = useMemo(() => merchantNetworksForCurrency(currency), [currency]);
   const [walletId, setWalletId] = useState("");
   const [redirectUrl, setRedirectUrl] = useState("");
   const [expiryOn, setExpiryOn] = useState(false);
@@ -252,7 +253,8 @@ export default function PaymentLinksPage() {
                             onClick={() => {
                               setCurrency(c);
                               setCurrencyOpen(false);
-                              if (c === "USDT" || c === "USDC") setStablecoinNetwork("TRC20");
+                              if (c === "USDT") setStablecoinNetwork("TRC20");
+                              if (c === "USDC") setStablecoinNetwork("SPL");
                             }}
                             className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-white hover:bg-white/5"
                           >
@@ -270,7 +272,7 @@ export default function PaymentLinksPage() {
                 <div>
                   <label className="mb-1.5 block text-[13px] font-medium text-white">{currency} Network</label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {STABLECOIN_NETWORKS.map((n) => (
+                    {networkOptions.map((n) => (
                       <button
                         key={n.network}
                         type="button"

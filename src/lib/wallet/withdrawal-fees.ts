@@ -7,13 +7,9 @@ const WITHDRAWAL_NETWORK_FEES: Record<string, number> = {
   "USDT|Arbitrum": 0.1,
   "USDT|Base": 0.05,
   "USDT|Avalanche": 0.1,
-  "USDC|TRC20": 2,
   "USDC|SPL": 0.05,
-  "USDC|BEP20": 0.15,
   "USDC|Polygon": 0.05,
-  "USDC|Arbitrum": 0.1,
   "USDC|Base": 0.05,
-  "USDC|Avalanche": 0.1,
 };
 
 export function getWithdrawalNetworkFee(currency: string, network: string): number {

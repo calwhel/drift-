@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { Icon } from "@/components/icons";
 import { StatusBadge } from "@/components/status-badge";
-import { STABLECOIN_NETWORKS, getNetworkLabel, type StablecoinNetwork } from "@/lib/constants";
+import { merchantNetworksForCurrency, getNetworkLabel, defaultNetworkForCurrency, type StablecoinNetwork } from "@/lib/constants";
 
 interface Invoice {
   id: string;
@@ -28,6 +28,7 @@ export default function InvoicesPage() {
   const [currency, setCurrency] = useState("USDT");
   const [stablecoinNetwork, setStablecoinNetwork] = useState<StablecoinNetwork>("TRC20");
   const isStablecoinCurrency = currency === "USDT" || currency === "USDC";
+  const networkOptions = merchantNetworksForCurrency(currency);
   const [loading, setLoading] = useState(false);
   const [lastLink, setLastLink] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -92,14 +93,18 @@ export default function InvoicesPage() {
             <input placeholder="Item description" value={description} onChange={(e) => setDescription(e.target.value)} className="input w-full" />
             <div className="grid grid-cols-2 gap-3">
               <input placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="input" />
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="input">
+              <select value={currency} onChange={(e) => {
+                const next = e.target.value;
+                setCurrency(next);
+                setStablecoinNetwork(defaultNetworkForCurrency(next) as StablecoinNetwork);
+              }} className="input">
                 <option value="USDT">USDT</option>
                 <option value="USDC">USDC</option>
               </select>
             </div>
             {isStablecoinCurrency && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {STABLECOIN_NETWORKS.map((n) => (
+                {networkOptions.map((n) => (
                   <button
                     key={n.network}
                     type="button"
