@@ -44,6 +44,7 @@ export default function PayoutsPage() {
   const [toAddress, setToAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const custodialWallets = wallets.filter((w) => w.walletType === "generated");
   const selectedWallet = custodialWallets.find((w) => w.id === walletId);
@@ -129,6 +130,12 @@ export default function PayoutsPage() {
     failed: "Failed",
   };
 
+  const copyWithdrawalId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 2000);
+  };
+
   return (
     <>
       <DashboardHeader title="Payouts" subtitle="Withdraw funds to your wallet" />
@@ -211,6 +218,7 @@ export default function PayoutsPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-drift-border text-drift-muted">
                 <tr>
+                  <th className="px-4 py-2">Reference</th>
                   <th className="px-4 py-2">Sent</th>
                   <th className="px-4 py-2">Fee</th>
                   <th className="px-4 py-2">Network</th>
@@ -225,6 +233,16 @@ export default function PayoutsPage() {
                   const sent = Number(w.amount) - fee;
                   return (
                     <tr key={w.id} className="border-b border-drift-border/50">
+                      <td className="px-4 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => copyWithdrawalId(w.id)}
+                          title={w.id}
+                          className="font-mono text-2xs text-brand-400 hover:underline"
+                        >
+                          {copiedId === w.id ? "Copied" : `${w.id.slice(0, 8)}…`}
+                        </button>
+                      </td>
                       <td className="px-4 py-2.5 tabular-nums text-white">
                         {sent.toFixed(4)} {w.currency}
                       </td>
@@ -268,7 +286,7 @@ export default function PayoutsPage() {
                 })}
                 {withdrawals.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-drift-muted">
+                    <td colSpan={7} className="px-4 py-8 text-center text-drift-muted">
                       No withdrawals yet
                     </td>
                   </tr>
