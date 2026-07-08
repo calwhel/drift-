@@ -138,7 +138,9 @@ export async function verifyWithdrawalTransactions(
   }
 
   if (isEvmUsdtNetwork(network) && currency === "USDT") {
-    // EVM receipts are checked at broadcast time (tx.wait + status)
+    for (const hash of hashes) {
+      await verifyEvmTransactionSuccess(hash, network);
+    }
     return;
   }
 
@@ -146,6 +148,47 @@ export async function verifyWithdrawalTransactions(
     // sendAndConfirmTransaction already confirms
     return;
   }
+}
+
+export async function verifyEvmTransactionSuccess(
+  txHash: string,
+  network: string,
+  timeoutMs = 90_000
+): Promise<void> {
+  const chain = (await import("../evm/chains")).getEvmChain(network);
+  if (!chain) throw new Error(`Unknown EVM network: ${network}`);
+
+  const { withEvmRpc } = await import("../evm/rpc");
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const ok = await withEvmRpc(chain, async (provider) => {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        return receipt != null && receipt.status === 1;
+      });
+      if (ok) return;
+      const failed = await withEvmRpc(chain, async (provider) => {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        return receipt != null && receipt.status !== 1;
+      });
+      if (failed) throw new Error("EVM transaction failed on-chain");
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("failed on-chain")) throw err;
+    }
+    await sleep(3000);
+  }
+
+  throw new Error("EVM transaction was not confirmed on-chain in time");
+}
+
+export function isVerifyAmbiguousError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    /not confirmed on-chain in time/i.test(msg) ||
+    /TronGrid verify HTTP/i.test(msg) ||
+    /429|rate limit|too many requests|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg)
+  );
 }
 
 export function assertPositiveNetAmount(netAmount: number): void {

@@ -44,6 +44,8 @@ export async function findSplDepositSourcesWithBalance(
 
     if (!addressMap.has(address)) {
       addressMap.set(address, link.derivationIndex ?? null);
+    } else if (link.derivationIndex != null) {
+      addressMap.set(address, link.derivationIndex);
     }
   }
 

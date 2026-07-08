@@ -24,19 +24,34 @@ export default function WebhooksPage() {
   const [url, setUrl] = useState("https://your-api.com/webhooks/drift");
   const [secret, setSecret] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = () =>
     fetch("/api/webhooks")
-      .then((r) => (r.ok ? r.json() : []))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load webhooks");
+        }
+        return r.json();
+      })
       .then(setHooks)
-      .catch(() => setHooks([]));
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load webhooks"));
 
   const loadDeliveries = () =>
     fetch("/api/webhooks/deliveries?limit=30")
-      .then((r) => (r.ok ? r.json() : { deliveries: [] }))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load webhook deliveries");
+        }
+        return r.json();
+      })
       .then((data) => setDeliveries(data.deliveries ?? []))
-      .catch(() => setDeliveries([]));
+      .catch((err) =>
+        setLoadError(err instanceof Error ? err.message : "Failed to load webhook deliveries")
+      );
 
   useEffect(() => {
     load();
@@ -89,6 +104,11 @@ export default function WebhooksPage() {
     <>
       <DashboardHeader title="Webhooks" subtitle="Receive transaction status updates" />
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
+        {loadError && (
+          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         {error && (
           <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
             {error}

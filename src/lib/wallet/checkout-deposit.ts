@@ -1,5 +1,5 @@
-import { deriveDepositAddress, getNextDerivationIndex } from "./derive";
 import { isMasterWalletConfigured } from "./master-wallet";
+import { deriveDepositAddress, getNextDerivationIndex } from "./derive";
 
 type WalletRow = {
   id: string;
@@ -15,39 +15,28 @@ export interface CheckoutDeposit {
 }
 
 /**
- * Unique deposit address per checkout when master wallet is configured.
- * Falls back to custodial wallet address only for generated wallets when mnemonic is missing.
+ * Unique deposit address per checkout — requires master mnemonic.
+ * Shared custodial address mode is disabled (causes payment misattribution).
  */
 export async function resolveCheckoutDeposit(
   currency: string,
   network: string,
   wallet: WalletRow | null
 ): Promise<CheckoutDeposit> {
-  if (isMasterWalletConfigured()) {
-    const derivationIndex = await getNextDerivationIndex();
-    const depositAddress = deriveDepositAddress(derivationIndex, currency, network);
-
-    return {
-      depositAddress,
-      derivationIndex,
-      walletId: wallet?.id ?? null,
-    };
-  }
-
-  if (wallet?.walletType === "generated") {
-    console.warn(
-      "[checkout] MASTER_WALLET_MNEMONIC not configured — using custodial wallet address. Set mnemonic in Railway for unique deposit addresses per link."
+  if (!isMasterWalletConfigured()) {
+    throw new Error(
+      "MASTER_WALLET_MNEMONIC is not configured. Add a valid BIP39 mnemonic in Railway to create payment links with unique deposit addresses."
     );
-    return {
-      depositAddress: wallet.address,
-      derivationIndex: wallet.derivationIndex ?? null,
-      walletId: wallet.id,
-    };
   }
 
-  throw new Error(
-    "MASTER_WALLET_MNEMONIC is not configured. Add a valid BIP39 mnemonic in Railway environment variables to create payment links."
-  );
+  const derivationIndex = await getNextDerivationIndex();
+  const depositAddress = deriveDepositAddress(derivationIndex, currency, network);
+
+  return {
+    depositAddress,
+    derivationIndex,
+    walletId: wallet?.id ?? null,
+  };
 }
 
 /** Direct wallet address — used only for displaying the merchant's custodial wallet, not checkout. */

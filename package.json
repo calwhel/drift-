@@ -17,6 +17,7 @@
     "db:seed-admin": "node scripts/seed-admin.cjs admin@driftpayment.io",
     "db:studio": "drizzle-kit studio",
     "smoke:test": "node scripts/smoke-test.cjs",
+    "test:money": "node scripts/test-money-flows.cjs",
     "fee:audit": "node scripts/fee-audit.cjs"
   },
   "dependencies": {

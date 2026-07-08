@@ -7,6 +7,8 @@ import {
 } from "./trongrid";
 import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
+import { withEvmRpc } from "../evm/rpc";
+import { Contract } from "ethers";
 
 export interface OnChainWalletBalance {
   amount: number | null;
@@ -65,12 +67,34 @@ async function fetchEvmTokenBalance(
   return Number(result ?? 0) / Math.pow(10, tokenDecimals);
 }
 
+async function fetchEvmUsdtBalanceRpc(
+  address: string,
+  chain: NonNullable<ReturnType<typeof getEvmChain>>
+): Promise<{ amount: number; nativeGas: number | null }> {
+  return withEvmRpc(chain, async (provider) => {
+    const contract = new Contract(
+      chain.usdtContract,
+      ["function balanceOf(address) view returns (uint256)"],
+      provider
+    );
+    const raw = await contract.balanceOf(address);
+    const amount = Number(raw) / Math.pow(10, chain.usdtDecimals);
+    let nativeGas: number | null = null;
+    try {
+      const native = await provider.getBalance(address);
+      nativeGas = Number(native) / Math.pow(10, chain.nativeDecimals);
+    } catch {
+      nativeGas = null;
+    }
+    return { amount, nativeGas };
+  });
+}
+
 async function fetchEvmUsdtBalance(
   address: string,
   network: string
 ): Promise<OnChainWalletBalance> {
   const chain = getEvmChain(network);
-  const apiKey = process.env.ETHERSCAN_API_KEY;
 
   if (!chain) {
     return {
@@ -82,13 +106,28 @@ async function fetchEvmUsdtBalance(
     };
   }
 
+  // Prefer RPC (zero-config); fall back to Etherscan when available
+  try {
+    const rpc = await fetchEvmUsdtBalanceRpc(address, chain);
+    return {
+      amount: rpc.amount,
+      currency: "USDT",
+      network,
+      nativeGas:
+        rpc.nativeGas != null ? { amount: rpc.nativeGas, symbol: chain.nativeSymbol } : null,
+    };
+  } catch (rpcErr) {
+    console.warn(`[balances] RPC USDT balance failed for ${network} ${address}:`, rpcErr);
+  }
+
+  const apiKey = process.env.ETHERSCAN_API_KEY;
   if (!apiKey) {
     return {
       amount: null,
       currency: "USDT",
       network,
       nativeGas: null,
-      error: "ETHERSCAN_API_KEY not set",
+      error: `Could not read ${network} USDT balance via RPC or Etherscan`,
     };
   }
 

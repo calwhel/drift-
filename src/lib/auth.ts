@@ -41,7 +41,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const email = credentials.email.toLowerCase().trim();
 
-          const loginLimit = rateLimit(`login:${email}`, 20, 60_000);
+          const loginLimit = await rateLimit(`login:${email}`, 20, 60_000);
           if (!loginLimit.allowed) {
             console.warn("[auth] Login rate limit exceeded for", email);
             return null;

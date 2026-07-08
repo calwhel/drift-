@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const user = await requireTwoFactorVerified();
 
     const ip = req.headers.get("x-forwarded-for") ?? user.id;
-    const limit = rateLimit(`support:${ip}`, 5, 60_000);
+    const limit = await rateLimit(`support:${ip}`, 5, 60_000);
     if (!limit.allowed) {
       return NextResponse.json({ error: "Too many requests. Try again in a minute." }, { status: 429 });
     }

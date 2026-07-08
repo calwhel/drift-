@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, platformWallets } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { validateWalletAddress } from "@/lib/wallet/generate";
 
 const updateSchema = z.object({
   address: z.string().min(1).optional(),
@@ -34,6 +35,23 @@ export async function PUT(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const [existing] = await db
+    .select()
+    .from(platformWallets)
+    .where(eq(platformWallets.id, params.id))
+    .limit(1);
+
+  if (!existing) {
+    return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
+  }
+
+  if (parsed.data.address && !validateWalletAddress(parsed.data.address, existing.network)) {
+    return NextResponse.json(
+      { error: `Invalid ${existing.network} address` },
+      { status: 400 }
+    );
+  }
+
   const [updated] = await db
     .update(platformWallets)
     .set({ ...parsed.data, updatedAt: new Date() })
@@ -55,6 +73,14 @@ export async function DELETE(
     await requireAdmin();
   } catch (err) {
     return authError(err);
+  }
+
+  const all = await db.select({ id: platformWallets.id }).from(platformWallets);
+  if (all.length <= 1) {
+    return NextResponse.json(
+      { error: "Cannot delete the last platform wallet — fee collection requires at least one" },
+      { status: 400 }
+    );
   }
 
   const [deleted] = await db

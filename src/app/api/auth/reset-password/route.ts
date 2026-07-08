@@ -17,7 +17,7 @@ function hashToken(token: string) {
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const limit = rateLimit(`reset-password:${ip}`, 10, 60_000);
+  const limit = await rateLimit(`reset-password:${ip}`, 10, 60_000);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
   }

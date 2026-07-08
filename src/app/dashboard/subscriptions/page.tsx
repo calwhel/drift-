@@ -27,12 +27,19 @@ export default function SubscriptionsPage() {
   const [interval, setInterval] = useState("month");
   const [loading, setLoading] = useState(false);
   const [lastLink, setLastLink] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const load = () => {
     fetch("/api/subscriptions")
-      .then((r) => (r.ok ? r.json() : []))
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load subscriptions");
+        }
+        return r.json();
+      })
       .then(setSubs)
-      .catch(() => {});
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load subscriptions"));
   };
 
   useEffect(() => {
@@ -75,6 +82,11 @@ export default function SubscriptionsPage() {
         </button>
       </DashboardHeader>
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
+        {loadError && (
+          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         {showCreate && (
           <div className="card mb-4 space-y-3 p-4">
             <p className="text-xs text-drift-muted">

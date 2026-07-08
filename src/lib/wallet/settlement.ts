@@ -2,10 +2,15 @@ import { eq, or, and, sql } from "drizzle-orm";
 import { db, settlements, wallets } from "../db";
 import { getPlatformFeeAddress } from "../platform-wallets";
 import { broadcastFromPrivateKey, getPrivateKeyFromWallet } from "./broadcast";
-import { derivePrivateKey } from "./derive";
+import { derivePrivateKey, deriveDepositAddress } from "./derive";
 import { fundTronAddressIfNeeded, getTronSourceAddress } from "./tron-gas";
+import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
 import { notifyFeeSettlementFailed, notifyFeeSettlementSuccess } from "../telegram";
 import { isUsdtLedgerOnly } from "../constants";
+import { isEvmUsdtNetwork } from "../evm/chains";
+import { verifyEvmTransactionSuccess } from "./tx-verify";
+
+type DbClient = Pick<typeof db, "insert" | "select" | "update">;
 
 const USDT_ERC20 = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -17,12 +22,13 @@ export async function queueSettlements(
   feeAmount: number,
   netAmount: number,
   derivationIndex: number | null,
-  walletId: string | null
+  walletId: string | null,
+  txClient: DbClient = db
 ) {
   let sourceWallet: typeof wallets.$inferSelect | null = null;
 
   if (walletId) {
-    const [w] = await db.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
+    const [w] = await txClient.select().from(wallets).where(eq(wallets.id, walletId)).limit(1);
     sourceWallet = w ?? null;
   }
 
@@ -31,9 +37,16 @@ export async function queueSettlements(
   const isGenerated = sourceWallet?.walletType === "generated";
   const ledgerOnly = isUsdtLedgerOnly(currency, network);
 
+  const insertSettlement = async (values: typeof settlements.$inferInsert) => {
+    await txClient
+      .insert(settlements)
+      .values(values)
+      .onConflictDoNothing({ target: [settlements.transactionId, settlements.type] });
+  };
+
   if (netAmount > 0 && merchantAddress && !merchantAddress.startsWith("pending_")) {
     if (isGenerated) {
-      await db.insert(settlements).values({
+      await insertSettlement({
         transactionId,
         userId,
         type: "merchant_payout",
@@ -47,7 +60,7 @@ export async function queueSettlements(
       });
     } else {
       if (derivationIndex != null && netAmount > 0) {
-        await db.insert(settlements).values({
+        await insertSettlement({
           transactionId,
           userId,
           type: "merchant_payout",
@@ -60,7 +73,7 @@ export async function queueSettlements(
           status: "pending",
         });
       } else {
-        await db.insert(settlements).values({
+        await insertSettlement({
           transactionId,
           userId,
           type: "merchant_payout",
@@ -77,7 +90,7 @@ export async function queueSettlements(
   }
 
   if (feeAmount > 0 && ledgerOnly && feeWallet) {
-    await db.insert(settlements).values({
+    await insertSettlement({
       transactionId,
       userId,
       type: "platform_fee",
@@ -90,7 +103,7 @@ export async function queueSettlements(
       status: "ledger_settled",
     });
   } else if (feeAmount > 0 && feeWallet && isGenerated && sourceWallet?.encryptedPrivateKey) {
-    await db.insert(settlements).values({
+    await insertSettlement({
       transactionId,
       userId,
       type: "platform_fee",
@@ -103,7 +116,7 @@ export async function queueSettlements(
       status: "pending",
     });
   } else if (feeAmount > 0 && feeWallet && derivationIndex != null) {
-    await db.insert(settlements).values({
+    await insertSettlement({
       transactionId,
       userId,
       type: "platform_fee",
@@ -168,176 +181,135 @@ export async function processPendingSettlements(): Promise<number> {
   let processed = 0;
 
   for (const settlement of pending) {
-    if (settlement.status === "failed") {
-      await db
-        .update(settlements)
-        .set({ status: "pending", error: null })
-        .where(eq(settlements.id, settlement.id));
-    }
+    const [claimed] = await db
+      .update(settlements)
+      .set({ status: "processing", error: null })
+      .where(
+        and(
+          eq(settlements.id, settlement.id),
+          or(eq(settlements.status, "pending"), eq(settlements.status, "failed"))
+        )
+      )
+      .returning();
+
+    if (!claimed) continue;
 
     try {
-      let txHash: string | null = null;
+      if (claimed.txHash) {
+        if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT") {
+          await verifyEvmTransactionSuccess(claimed.txHash, claimed.network, 15_000);
+        } else if (claimed.network === "TRC20" && claimed.currency === "USDT") {
+          const { verifyTronTransactionSuccess } = await import("./tx-verify");
+          await verifyTronTransactionSuccess(claimed.txHash, 15_000);
+        }
+        await db
+          .update(settlements)
+          .set({ status: "completed", completedAt: new Date() })
+          .where(eq(settlements.id, claimed.id));
+        processed++;
+        continue;
+      }
 
-      if (settlement.network === "TRC20" && settlement.currency === "USDT") {
+      let txHash: string | null = null;
+      const amount = Number(claimed.amount);
+      const fromIndex = claimed.fromDerivationIndex;
+
+      if (claimed.network === "TRC20" && claimed.currency === "USDT") {
         const sourceAddress = getTronSourceAddress(
-          settlement.fromDerivationIndex,
-          settlement.currency,
-          settlement.network,
-          settlement.walletId
+          fromIndex,
+          claimed.currency,
+          claimed.network,
+          claimed.walletId
             ? (
                 await db
                   .select({ address: wallets.address })
                   .from(wallets)
-                  .where(eq(wallets.id, settlement.walletId))
+                  .where(eq(wallets.id, claimed.walletId))
                   .limit(1)
               )[0]?.address
             : null
         );
-        if (sourceAddress) {
-          await fundTronAddressIfNeeded(sourceAddress);
-        }
+        if (sourceAddress) await fundTronAddressIfNeeded(sourceAddress);
       }
 
-      if (
-        settlement.network === "TRC20" &&
-        settlement.currency === "USDT" &&
-        settlement.fromDerivationIndex != null
-      ) {
-        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "TRC20");
+      if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT" && fromIndex != null) {
+        const fromAddress = deriveDepositAddress(fromIndex, "USDT", claimed.network);
+        await fundEvmNativeIfNeeded(claimed.network, fromAddress);
+      }
+
+      if (fromIndex != null) {
+        const privateKey = derivePrivateKey(fromIndex, claimed.network);
         txHash = await broadcastFromPrivateKey(
           privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
+          claimed.toAddress,
+          amount,
+          claimed.currency,
+          claimed.network
         );
-      } else if (settlement.walletId) {
+        if (isEvmUsdtNetwork(claimed.network) && claimed.currency === "USDT") {
+          const fromAddress = deriveDepositAddress(fromIndex, "USDT", claimed.network);
+          await reclaimEvmNativeToGasWallet(claimed.network, privateKey, fromAddress);
+        }
+      } else if (claimed.walletId) {
         const [wallet] = await db
           .select()
           .from(wallets)
-          .where(eq(wallets.id, settlement.walletId))
+          .where(eq(wallets.id, claimed.walletId))
           .limit(1);
 
         const privateKey = getPrivateKeyFromWallet(wallet?.encryptedPrivateKey ?? null);
         if (!privateKey) {
-          await db
-            .update(settlements)
-            .set({ status: "failed", error: "Missing custodial wallet key" })
-            .where(eq(settlements.id, settlement.id));
-          if (settlement.type === "platform_fee") {
-            notifyFeeSettlementFailed({
-              network: settlement.network,
-              amount: settlement.amount,
-              currency: settlement.currency,
-              error: "Missing custodial wallet key",
-            });
-          }
-          continue;
+          throw new Error("Missing custodial wallet key");
         }
 
         txHash = await broadcastFromPrivateKey(
           privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
+          claimed.toAddress,
+          amount,
+          claimed.currency,
+          claimed.network
         );
       } else if (
-        settlement.network === "ERC20" &&
-        settlement.currency === "USDC" &&
+        claimed.network === "ERC20" &&
         process.env.ETH_RPC_URL &&
-        settlement.fromDerivationIndex != null
+        fromIndex != null
       ) {
+        const contract =
+          claimed.currency === "USDC"
+            ? "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            : USDT_ERC20;
+        const decimals = claimed.currency === "USDC" ? 6 : 6;
         txHash = await broadcastErc20FromIndex(
-          settlement.fromDerivationIndex,
-          settlement.toAddress,
-          Number(settlement.amount),
+          fromIndex,
+          claimed.toAddress,
+          amount,
           process.env.ETH_RPC_URL,
-          "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-          6
+          contract,
+          decimals
         );
-      } else if (
-        settlement.network === "ERC20" &&
-        settlement.currency === "USDT" &&
-        process.env.ETH_RPC_URL &&
-        settlement.fromDerivationIndex != null
-      ) {
-        txHash = await broadcastErc20FromIndex(
-          settlement.fromDerivationIndex,
-          settlement.toAddress,
-          Number(settlement.amount),
-          process.env.ETH_RPC_URL,
-          USDT_ERC20,
-          6
-        );
-      } else if (
-        settlement.network === "SPL" &&
-        settlement.currency === "USDT" &&
-        settlement.fromDerivationIndex != null
-      ) {
-        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "SPL");
-        txHash = await broadcastFromPrivateKey(
-          privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
-        );
-      } else if (
-        settlement.network === "Solana" &&
-        settlement.currency === "SOL" &&
-        settlement.fromDerivationIndex != null
-      ) {
-        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "Solana");
-        txHash = await broadcastFromPrivateKey(
-          privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
-        );
-      } else if (
-        settlement.network === "Bitcoin" &&
-        settlement.currency === "BTC" &&
-        settlement.fromDerivationIndex != null
-      ) {
-        const privateKey = derivePrivateKey(settlement.fromDerivationIndex, "Bitcoin");
-        txHash = await broadcastFromPrivateKey(
-          privateKey,
-          settlement.toAddress,
-          Number(settlement.amount),
-          settlement.currency,
-          settlement.network
-        );
-      } else if (settlement.network === "TRC20") {
-        await db
-          .update(settlements)
-          .set({
-            status: "queued",
-            error: "TRC20 fee sweep requires a custodial wallet or derivation index",
-          })
-          .where(eq(settlements.id, settlement.id));
-        continue;
       } else {
         await db
           .update(settlements)
           .set({
             status: "queued",
-            error: `Broadcast not configured for ${settlement.network}/${settlement.currency}`,
+            error: `Broadcast not configured for ${claimed.network}/${claimed.currency}`,
           })
-          .where(eq(settlements.id, settlement.id));
+          .where(eq(settlements.id, claimed.id));
         continue;
       }
 
+      if (!txHash) throw new Error("Settlement broadcast returned no transaction id");
+
       await db
         .update(settlements)
-        .set({ status: "completed", txHash, completedAt: new Date() })
-        .where(eq(settlements.id, settlement.id));
-      if (settlement.type === "platform_fee" && txHash) {
+        .set({ status: "completed", txHash, completedAt: new Date(), error: null })
+        .where(eq(settlements.id, claimed.id));
+
+      if (claimed.type === "platform_fee") {
         notifyFeeSettlementSuccess({
-          network: settlement.network,
-          amount: settlement.amount,
-          currency: settlement.currency,
+          network: claimed.network,
+          amount: claimed.amount,
+          currency: claimed.currency,
           txHash,
         });
       }
@@ -346,16 +318,13 @@ export async function processPendingSettlements(): Promise<number> {
       const errorMessage = err instanceof Error ? err.message : "Settlement failed";
       await db
         .update(settlements)
-        .set({
-          status: "failed",
-          error: errorMessage,
-        })
-        .where(eq(settlements.id, settlement.id));
-      if (settlement.type === "platform_fee") {
+        .set({ status: "failed", error: errorMessage })
+        .where(eq(settlements.id, claimed.id));
+      if (claimed.type === "platform_fee") {
         notifyFeeSettlementFailed({
-          network: settlement.network,
-          amount: settlement.amount,
-          currency: settlement.currency,
+          network: claimed.network,
+          amount: claimed.amount,
+          currency: claimed.currency,
           error: errorMessage,
         });
       }

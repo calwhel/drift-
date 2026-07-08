@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, isNull } from "drizzle-orm";
 import { db, paymentLinks, transactions, wallets, users } from "../db";
 import { calculateFee } from "../fees";
 import { getRequiredConfirmations, getDecimals, TOKEN_CONTRACTS } from "../constants";
@@ -14,6 +14,8 @@ import {
 import { buildEtherscanV2Url } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
+import { withEvmRpc } from "../evm/rpc";
+import { recordPollFailure, recordPollSuccess } from "./poll-health";
 
 interface DetectedPayment {
   txHash: string;
@@ -49,10 +51,8 @@ function addressesMatch(stored: string, observed: string, network: string): bool
 
 async function getPollTargets(): Promise<PollTarget[]> {
   const now = new Date();
-  const activeLinks = await db
-    .select()
-    .from(paymentLinks)
-    .where(eq(paymentLinks.status, "active"));
+  const allLinks = await db.select().from(paymentLinks);
+  const activeLinks = allLinks.filter((l) => l.status === "active");
   const validLinks = activeLinks.filter((l) => !l.expiry || l.expiry > now);
 
   const generatedWallets = await db
@@ -66,8 +66,20 @@ async function getPollTargets(): Promise<PollTarget[]> {
 
   const targets = new Map<string, PollTarget>();
 
+  // Active checkout addresses
   for (const link of validLinks) {
     if (link.network === "ERC20") continue;
+    targets.set(pollTargetKey(link.depositAddress, link.currency, link.network), {
+      address: link.depositAddress,
+      currency: link.currency,
+      network: link.network,
+    });
+  }
+
+  // Orphan deposit addresses (paid/expired links may still receive late payments)
+  for (const link of allLinks) {
+    if (link.network === "ERC20" || link.status === "active") continue;
+    if (!link.depositAddress?.trim()) continue;
     targets.set(pollTargetKey(link.depositAddress, link.currency, link.network), {
       address: link.depositAddress,
       currency: link.currency,
@@ -127,9 +139,13 @@ async function pollTron(address: string): Promise<DetectedPayment[]> {
     headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : {},
   });
   if (!res.ok) {
-    console.warn(`[payment-poller] TronGrid API error ${res.status} for ${address}`);
+    const msg = `TronGrid API error ${res.status}`;
+    console.warn(`[payment-poller] ${msg} for ${address}`);
+    recordPollFailure("TRC20", "USDT", msg);
     return [];
   }
+
+  recordPollSuccess("TRC20", "USDT");
 
   const data = await res.json();
   const required = getRequiredConfirmations("USDT", "TRC20");
@@ -171,16 +187,22 @@ async function pollEvm(
 
   const res = await fetch(url);
   if (!res.ok) {
-    console.warn(`[payment-poller] Etherscan API error ${res.status} for ${network}/${address}`);
+    const msg = `Etherscan API error ${res.status}`;
+    console.warn(`[payment-poller] ${msg} for ${network}/${address}`);
+    recordPollFailure(network, currency, msg);
     return [];
   }
   const data = await res.json();
   if (data.status !== "1") {
     if (data.message && data.message !== "No transactions found") {
-      console.warn(`[payment-poller] Etherscan ${network} for ${address}: ${data.message}`);
+      const msg = `Etherscan ${network}: ${data.message}`;
+      console.warn(`[payment-poller] ${msg} for ${address}`);
+      recordPollFailure(network, currency, msg);
     }
     return [];
   }
+
+  recordPollSuccess(network, currency);
 
   const decimals = getDecimals(currency, network);
 
@@ -190,7 +212,7 @@ async function pollEvm(
         addressesMatch(address, tx.to ?? "", network) &&
         (!contract || tx.contractAddress?.toLowerCase() === contract.toLowerCase())
     )
-    .slice(0, 15)
+    .slice(0, 50)
     .map((tx: Record<string, string>) => ({
       txHash: tx.hash,
       amount: Number(tx.value) / Math.pow(10, decimals),
@@ -258,7 +280,7 @@ async function getBitcoinBlockHeight(): Promise<number> {
     logBlockstreamError("block height", err);
   }
 
-  return cachedBtcHeight || 800000;
+  return cachedBtcHeight || 0;
 }
 
 async function pollSolanaSpl(ownerAddress: string): Promise<DetectedPayment[]> {
@@ -394,11 +416,17 @@ export async function pollAllNetworks() {
 
   for (const target of targets) {
     try {
-      detected.push(...(await pollAddress(target)));
+      const found = await pollAddress(target);
+      detected.push(...found);
+      if (found.length > 0) {
+        recordPollSuccess(target.network, target.currency);
+      }
     } catch (err) {
-      // Bitcoin errors are handled inside pollBitcoin with rate-limited logging
-      if (target.network === "Bitcoin") continue;
-      console.error(`Poll error ${target.network}/${target.currency} for ${target.address}:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (target.network !== "Bitcoin") {
+        console.error(`Poll error ${target.network}/${target.currency} for ${target.address}:`, err);
+        recordPollFailure(target.network, target.currency, msg);
+      }
     }
   }
 
@@ -423,9 +451,12 @@ async function updateConfirmingTransactions() {
     const required = getRequiredConfirmations(tx.currency, tx.network);
     let current = Number(tx.confirmations ?? 0);
 
-    // Re-check on-chain for stuck TRC20 txs (TronGrid list omits a confirmed flag)
-    if (current < required && tx.network === "TRC20" && tx.currency === "USDT") {
-      const refreshed = await getTronTransferConfirmations(tx.txHash);
+    if (current < required) {
+      const refreshed = await refreshTransactionConfirmations(
+        tx.txHash,
+        tx.currency,
+        tx.network
+      );
       if (refreshed > current) {
         current = refreshed;
         await db
@@ -439,6 +470,62 @@ async function updateConfirmingTransactions() {
       await completeTransaction(tx.id);
     }
   }
+}
+
+async function refreshTransactionConfirmations(
+  txHash: string,
+  currency: string,
+  network: string
+): Promise<number> {
+  const required = getRequiredConfirmations(currency, network);
+
+  if (network === "TRC20" && currency === "USDT") {
+    return getTronTransferConfirmations(txHash);
+  }
+
+  if (isEvmUsdtNetwork(network) && currency === "USDT") {
+    const chain = getEvmChain(network);
+    if (!chain) return 0;
+    try {
+      return await withEvmRpc(chain, async (provider) => {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        if (!receipt || receipt.status !== 1) return 0;
+        const block = await provider.getBlockNumber();
+        return Math.max(block - receipt.blockNumber + 1, 1);
+      });
+    } catch {
+      return 0;
+    }
+  }
+
+  if (network === "SPL" && currency === "USDT") {
+    try {
+      const { Connection } = await import("@solana/web3.js");
+      const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+      const connection = new Connection(rpc, "confirmed");
+      const statuses = await connection.getSignatureStatuses([txHash]);
+      const status = statuses.value[0];
+      if (status?.confirmationStatus === "finalized") return required;
+      if (status?.confirmationStatus === "confirmed") return Math.min(required, 32);
+      return status?.confirmations ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  if (network === "Bitcoin" && currency === "BTC") {
+    try {
+      const tx = await fetchBlockstreamTx(txHash);
+      if (!tx.status.confirmed || !tx.status.block_height) return 0;
+      const tip = await getBitcoinBlockHeight();
+      if (!tip) return 0;
+      return Math.max(tip - tx.status.block_height + 1, 1);
+    } catch {
+      return 0;
+    }
+  }
+
+  return 0;
 }
 
 async function getTronTransferConfirmations(txHash: string): Promise<number> {
@@ -530,10 +617,15 @@ async function findMatchingPaymentLink(payment: DetectedPayment) {
   );
   if (exactMatch) return exactMatch;
 
-  // Accept any positive payment to this deposit address (including underpaid).
-  // Each checkout gets a unique address when MASTER_WALLET_MNEMONIC is set.
-  if (payment.amount > 0 && eligible.length > 0) {
+  // Reject ambiguous matches when multiple active links share an address
+  if (payment.amount > 0 && eligible.length === 1) {
     return eligible[0];
+  }
+
+  if (eligible.length > 1) {
+    console.warn(
+      `[payment-poller] Ambiguous payment ${payment.amount} ${payment.currency} to ${payment.depositAddress} — ${eligible.length} active links; skipping auto-match`
+    );
   }
 
   return null;
@@ -668,105 +760,149 @@ async function processDetectedPayment(payment: DetectedPayment) {
 }
 
 export async function completeTransaction(transactionId: string) {
-  const [tx] = await db
-    .update(transactions)
-    .set({ status: "completed", updatedAt: new Date() })
-    .where(
-      and(
-        eq(transactions.id, transactionId),
-        inArray(transactions.status, ["confirming", "underpaid", "overpaid", "pending"])
-      )
-    )
-    .returning();
+  type NotifyPayload = {
+    transaction: typeof transactions.$inferSelect;
+    net: number;
+    fee: number;
+    merchantName: string;
+  };
 
-  if (!tx) return;
-
-  const net = Number(tx.netAmount ?? 0);
-  const fee = Number(tx.feeAmount ?? 0);
-
-  let wallet: (typeof wallets.$inferSelect) | null = null;
-
-  if (tx.paymentLinkId) {
-    const [link] = await db
-      .select()
-      .from(paymentLinks)
-      .where(eq(paymentLinks.id, tx.paymentLinkId))
-      .limit(1);
-
-    if (link?.walletId) {
-      const [w] = await db.select().from(wallets).where(eq(wallets.id, link.walletId)).limit(1);
-      wallet = w ?? null;
-    }
-  }
-
-  if (!wallet) {
-    const [w] = await db
-      .select()
-      .from(wallets)
+  const notify = await db.transaction(async (dbTx): Promise<NotifyPayload | null> => {
+    const [statusUpdated] = await dbTx
+      .update(transactions)
+      .set({ status: "completed", updatedAt: new Date() })
       .where(
         and(
-          eq(wallets.userId, tx.userId),
-          eq(wallets.currency, tx.currency),
-          eq(wallets.network, tx.network)
+          eq(transactions.id, transactionId),
+          inArray(transactions.status, ["confirming", "underpaid", "overpaid", "pending"])
         )
       )
-      .limit(1);
-    wallet = w ?? null;
-  }
+      .returning();
 
-  if (wallet) {
-    await db
-      .update(wallets)
-      .set({ balance: sql`${wallets.balance}::numeric + ${String(net)}` })
-      .where(eq(wallets.id, wallet.id));
-  }
+    let txRow = statusUpdated ?? null;
 
-  if (tx.paymentLinkId) {
-    const [link] = await db
-      .select()
-      .from(paymentLinks)
-      .where(eq(paymentLinks.id, tx.paymentLinkId))
-      .limit(1);
+    if (!txRow) {
+      const [existing] = await dbTx
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, transactionId))
+        .limit(1);
+      if (!existing || existing.status !== "completed" || existing.balanceCreditedAt) {
+        return null;
+      }
+      txRow = existing;
+    }
 
-    if (link) {
-      await db
-        .update(paymentLinks)
-        .set({ status: "paid", paidAt: new Date() })
-        .where(eq(paymentLinks.id, link.id));
+    const [credited] = await dbTx
+      .update(transactions)
+      .set({ balanceCreditedAt: new Date() })
+      .where(and(eq(transactions.id, transactionId), isNull(transactions.balanceCreditedAt)))
+      .returning();
 
+    if (!credited) return null;
+
+    const net = Number(credited.netAmount ?? 0);
+    const fee = Number(credited.feeAmount ?? 0);
+
+    let wallet: (typeof wallets.$inferSelect) | null = null;
+    let linkDerivationIndex: number | null = null;
+    let linkWalletId: string | null = null;
+
+    if (credited.paymentLinkId) {
+      const [link] = await dbTx
+        .select()
+        .from(paymentLinks)
+        .where(eq(paymentLinks.id, credited.paymentLinkId))
+        .limit(1);
+
+      if (link) {
+        linkDerivationIndex = link.derivationIndex;
+        linkWalletId = link.walletId;
+        if (link.walletId) {
+          const [w] = await dbTx.select().from(wallets).where(eq(wallets.id, link.walletId)).limit(1);
+          wallet = w ?? null;
+        }
+
+        await dbTx
+          .update(paymentLinks)
+          .set({ status: "paid", paidAt: new Date() })
+          .where(eq(paymentLinks.id, link.id));
+      }
+    }
+
+    if (!wallet) {
+      const [w] = await dbTx
+        .select()
+        .from(wallets)
+        .where(
+          and(
+            eq(wallets.userId, credited.userId),
+            eq(wallets.currency, credited.currency),
+            eq(wallets.network, credited.network)
+          )
+        )
+        .limit(1);
+      wallet = w ?? null;
+    }
+
+    if (wallet && net > 0) {
+      await dbTx
+        .update(wallets)
+        .set({ balance: sql`${wallets.balance}::numeric + ${String(net)}` })
+        .where(eq(wallets.id, wallet.id));
+    }
+
+    if (credited.paymentLinkId) {
       await queueSettlements(
         transactionId,
-        tx.userId,
-        tx.currency,
-        tx.network,
+        credited.userId,
+        credited.currency,
+        credited.network,
         fee,
         net,
-        link.derivationIndex,
-        link.walletId
+        linkDerivationIndex,
+        linkWalletId,
+        dbTx
+      );
+    } else if (wallet) {
+      await queueSettlements(
+        transactionId,
+        credited.userId,
+        credited.currency,
+        credited.network,
+        fee,
+        net,
+        null,
+        wallet.id,
+        dbTx
       );
     }
-  } else if (wallet) {
-    await queueSettlements(
-      transactionId,
-      tx.userId,
-      tx.currency,
-      tx.network,
-      fee,
-      net,
-      null,
-      wallet.id
-    );
-  }
 
-  await dispatchWebhooks(tx.userId, transactionId, "transaction.completed");
+    const [merchant] = await dbTx
+      .select({ businessName: users.businessName })
+      .from(users)
+      .where(eq(users.id, credited.userId))
+      .limit(1);
+
+    return {
+      transaction: credited,
+      net,
+      fee,
+      merchantName: merchant?.businessName ?? "Unknown",
+    };
+  });
+
+  if (!notify) return;
+
+  await dispatchWebhooks(notify.transaction.userId, transactionId, "transaction.completed");
 
   await notifyPaymentCompleted({
-    amount: tx.amount,
-    currency: tx.currency,
-    network: tx.network,
-    merchantName: await getMerchantName(tx.userId),
-    feeAmount: fee,
-    netAmount: net,
-    txHash: tx.txHash,
+    amount: notify.transaction.amount,
+    currency: notify.transaction.currency,
+    network: notify.transaction.network,
+    merchantName: notify.merchantName,
+    feeAmount: notify.fee,
+    netAmount: notify.net,
+    txHash: notify.transaction.txHash,
   });
 }

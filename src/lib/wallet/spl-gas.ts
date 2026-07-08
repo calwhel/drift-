@@ -126,3 +126,21 @@ export async function fundSolIfNeeded(toAddress: string): Promise<void> {
   const gasKey = getSplGasWalletPrivateKey();
   await sendSol(gasKey, toAddress, sendSolAmount);
 }
+
+/** Reclaim leftover SOL from a deposit address back to the gas wallet. */
+export async function reclaimSolToGasWallet(
+  fromPrivateKey: string,
+  fromAddress: string
+): Promise<void> {
+  const gasAddress = getSplGasWalletAddress();
+  if (!gasAddress || fromAddress === gasAddress) return;
+
+  const balance = await fetchSolBalance(fromAddress);
+  const reclaimAmount = balance - MIN_SOL_GAS_OPERATION;
+  if (reclaimAmount <= 0.001) return;
+
+  const gasBalance = await fetchSolBalance(gasAddress);
+  if (gasBalance < MIN_SOL_GAS_OPERATION) return;
+
+  await sendSol(fromPrivateKey, gasAddress, reclaimAmount);
+}

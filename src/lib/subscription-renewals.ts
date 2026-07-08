@@ -38,12 +38,21 @@ export async function processSubscriptionRenewals(): Promise<number> {
 
     if (!oldLink) continue;
 
+    const wasPaid = oldLink.status === "paid";
+
+    if (!wasPaid) {
+      await db
+        .update(subscriptions)
+        .set({ status: "past_due" })
+        .where(eq(subscriptions.id, sub.id));
+      continue;
+    }
+
     const periodStart = sub.currentPeriodEnd ?? now;
     const periodEnd = addInterval(periodStart, sub.interval);
     const shortCode = nanoid(10);
-    const wasPaid = oldLink.status === "paid";
 
-    if (oldLink.status === "active") {
+    if (oldLink.status === "active" || oldLink.status === "paid") {
       await db
         .update(paymentLinks)
         .set({ status: "expired" })
@@ -86,7 +95,7 @@ export async function processSubscriptionRenewals(): Promise<number> {
         paymentLinkId: newLink.id,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
-        status: wasPaid ? "active" : "past_due",
+        status: "active",
       })
       .where(eq(subscriptions.id, sub.id));
 
@@ -106,9 +115,15 @@ export async function processSubscriptionRenewals(): Promise<number> {
       .where(eq(paymentLinks.id, sub.paymentLinkId))
       .limit(1);
     if (link?.status === "paid") {
+      const periodStart = sub.currentPeriodEnd ?? now;
+      const periodEnd = addInterval(periodStart, sub.interval);
       await db
         .update(subscriptions)
-        .set({ status: "active" })
+        .set({
+          status: "active",
+          currentPeriodStart: periodStart,
+          currentPeriodEnd: periodEnd,
+        })
         .where(eq(subscriptions.id, sub.id));
     }
   }

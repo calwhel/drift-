@@ -29,9 +29,19 @@ export default function InvoicesPage() {
   const [usdtNetwork, setUsdtNetwork] = useState<UsdtNetwork>("TRC20");
   const [loading, setLoading] = useState(false);
   const [lastLink, setLastLink] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const load = () => {
-    fetch("/api/invoices").then((r) => r.json()).then(setInvoices).catch(() => {});
+    fetch("/api/invoices")
+      .then(async (r) => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error((data as { error?: string }).error ?? "Failed to load invoices");
+        }
+        return r.json();
+      })
+      .then(setInvoices)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load invoices"));
   };
 
   useEffect(() => { load(); }, []);
@@ -67,6 +77,11 @@ export default function InvoicesPage() {
         </button>
       </DashboardHeader>
       <main className="flex-1 overflow-y-auto p-4 lg:p-5">
+        {loadError && (
+          <p className="mb-4 rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-sm text-drift-red">
+            {loadError}
+          </p>
+        )}
         {showCreate && (
           <div className="card mb-4 space-y-3 p-4">
             <div className="grid grid-cols-2 gap-3">
