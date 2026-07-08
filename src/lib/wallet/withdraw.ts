@@ -11,6 +11,12 @@ import { fundTronAddressIfNeeded, reclaimTronTrxToGasWallet } from "./tron-gas";
 import { fundEvmNativeIfNeeded, reclaimEvmNativeToGasWallet } from "../evm/gas";
 import { fundSolIfNeeded } from "./spl-gas";
 import { isEvmUsdtNetwork } from "../evm/chains";
+import {
+  assertPositiveNetAmount,
+  isValidTxHashForNetwork,
+  verifyWithdrawalTransactions,
+  verifyTronTransactionSuccess,
+} from "./tx-verify";
 
 class PartialWithdrawalError extends Error {
   constructor(
@@ -33,6 +39,17 @@ function getNetSendAmount(withdrawal: {
     return Math.round((gross - Number(withdrawal.feeAmount)) * 1e6) / 1e6;
   }
   return gross;
+}
+
+function assertWithdrawalBroadcastResult(
+  txHash: string,
+  withdrawal: { currency: string; network: string; amount: string; feeAmount: string | null }
+): void {
+  const netAmount = getNetSendAmount(withdrawal);
+  assertPositiveNetAmount(netAmount);
+  if (!txHash?.trim()) {
+    throw new Error("Withdrawal broadcast returned no transaction id");
+  }
 }
 
 async function refundWithdrawalBalance(
@@ -85,6 +102,7 @@ async function processTrc20UsdtWithdrawal(
   privateKey: string
 ): Promise<string> {
   const netAmount = getNetSendAmount(withdrawal);
+  assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
   const txHashes: string[] = [];
 
@@ -106,24 +124,23 @@ async function processTrc20UsdtWithdrawal(
 
     if (remaining > 0.000001) {
       const depositSources = await findTrc20DepositSourcesWithBalance(wallet.userId);
-      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+      const spendable = depositSources.filter((s) => s.derivationIndex != null);
+      const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+        const skipped = depositSources.length - spendable.length;
         throw new Error(
-          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)} across wallet + ${depositSources.length} deposit address(es), need ${netAmount.toFixed(4)} net). ` +
-            "Payments may still be confirming — wait a few minutes and retry."
+          `Insufficient on-chain USDT (have ${(custodialBalance + depositTotal).toFixed(4)} spendable across wallet + ${spendable.length} deposit address(es), need ${netAmount.toFixed(4)} net)` +
+            (skipped > 0 ? ` — ${skipped} deposit address(es) missing keys and cannot be swept.` : "") +
+            " Payments may still be confirming — wait a few minutes and retry."
         );
       }
 
-      for (const source of depositSources) {
+      for (const source of spendable) {
         if (remaining <= 0.000001) break;
-        if (source.derivationIndex == null) {
-          console.warn(`[withdraw] Skipping deposit ${source.address} — missing derivation index`);
-          continue;
-        }
 
         const sendAmount = Math.min(source.balance, remaining);
-        const depositKey = derivePrivateKey(source.derivationIndex, "TRC20");
+        const depositKey = derivePrivateKey(source.derivationIndex!, "TRC20");
         const hash = await broadcastTrc20UsdtWithdrawal(
           depositKey,
           source.address,
@@ -149,6 +166,10 @@ async function processTrc20UsdtWithdrawal(
       );
     }
     throw err;
+  }
+
+  if (txHashes.length === 0) {
+    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
   }
 
   return txHashes.join(",");
@@ -179,6 +200,7 @@ async function processEvmUsdtWithdrawal(
   privateKey: string
 ): Promise<string> {
   const netAmount = getNetSendAmount(withdrawal);
+  assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
   const txHashes: string[] = [];
   const network = withdrawal.network;
@@ -205,7 +227,8 @@ async function processEvmUsdtWithdrawal(
         wallet.userId,
         network
       );
-      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+      const spendable = depositSources.filter((s) => s.derivationIndex != null);
+      const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         throw new Error(
@@ -214,12 +237,11 @@ async function processEvmUsdtWithdrawal(
         );
       }
 
-      for (const source of depositSources) {
+      for (const source of spendable) {
         if (remaining <= 0.000001) break;
-        if (source.derivationIndex == null) continue;
 
         const sendAmount = Math.min(source.balance, remaining);
-        const depositKey = derivePrivateKey(source.derivationIndex, network);
+        const depositKey = derivePrivateKey(source.derivationIndex!, network);
         const hash = await broadcastEvmUsdtWithdrawal(
           network,
           depositKey,
@@ -248,6 +270,10 @@ async function processEvmUsdtWithdrawal(
     throw err;
   }
 
+  if (txHashes.length === 0) {
+    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
+  }
+
   return txHashes.join(",");
 }
 
@@ -267,6 +293,7 @@ async function processSplUsdtWithdrawal(
   privateKey: string
 ): Promise<string> {
   const netAmount = getNetSendAmount(withdrawal);
+  assertPositiveNetAmount(netAmount);
   let remaining = netAmount;
   const txHashes: string[] = [];
 
@@ -288,7 +315,8 @@ async function processSplUsdtWithdrawal(
 
     if (remaining > 0.000001) {
       const depositSources = await findSplDepositSourcesWithBalance(wallet.userId);
-      const depositTotal = depositSources.reduce((sum, s) => sum + s.balance, 0);
+      const spendable = depositSources.filter((s) => s.derivationIndex != null);
+      const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
       if (custodialBalance + depositTotal + 0.000001 < netAmount) {
         throw new Error(
@@ -297,12 +325,11 @@ async function processSplUsdtWithdrawal(
         );
       }
 
-      for (const source of depositSources) {
+      for (const source of spendable) {
         if (remaining <= 0.000001) break;
-        if (source.derivationIndex == null) continue;
 
         const sendAmount = Math.min(source.balance, remaining);
-        const depositKey = derivePrivateKey(source.derivationIndex, "SPL");
+        const depositKey = derivePrivateKey(source.derivationIndex!, "SPL");
         const hash = await broadcastSplUsdtWithdrawal(
           depositKey,
           source.address,
@@ -330,6 +357,10 @@ async function processSplUsdtWithdrawal(
     throw err;
   }
 
+  if (txHashes.length === 0) {
+    throw new Error("No on-chain USDT transfer was broadcast for this withdrawal");
+  }
+
   return txHashes.join(",");
 }
 
@@ -339,9 +370,59 @@ function isRetryableWithdrawalError(err: unknown): boolean {
   return /429|rate limit|too many requests|try again in a minute/i.test(msg);
 }
 
+function isConfirmationPendingError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /not confirmed on-chain in time/i.test(msg);
+}
+
 export { getTrc20WithdrawableOnChain };
 
+/** Fix withdrawals wrongly marked completed without a valid on-chain transaction. */
+async function repairInvalidCompletedWithdrawals(): Promise<number> {
+  const recent = await db
+    .select()
+    .from(withdrawals)
+    .where(eq(withdrawals.status, "completed"));
+
+  let repaired = 0;
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  for (const w of recent) {
+    if (new Date(w.completedAt ?? w.createdAt).getTime() < cutoff) continue;
+
+    const primaryHash = w.txHash?.split(",")[0]?.trim() ?? "";
+    let invalid = !primaryHash || !isValidTxHashForNetwork(primaryHash, w.currency, w.network);
+
+    if (!invalid && w.network === "TRC20" && w.currency === "USDT") {
+      try {
+        await verifyTronTransactionSuccess(primaryHash, 20_000);
+      } catch {
+        invalid = true;
+      }
+    }
+
+    if (!invalid) continue;
+
+    if (w.walletId) {
+      await refundWithdrawalBalance(w);
+    }
+    await db
+      .update(withdrawals)
+      .set({
+        status: "failed",
+        error:
+          "Withdrawal was marked complete without a confirmed on-chain payout. Your balance has been restored — please submit a new withdrawal.",
+      })
+      .where(eq(withdrawals.id, w.id));
+    repaired++;
+  }
+
+  return repaired;
+}
+
 export async function processPendingWithdrawals(): Promise<number> {
+  await repairInvalidCompletedWithdrawals();
+
   const pending = await db
     .select()
     .from(withdrawals)
@@ -351,6 +432,7 @@ export async function processPendingWithdrawals(): Promise<number> {
 
   for (const withdrawal of pending) {
     let netSent = 0;
+    let txHash: string | undefined;
 
     try {
       if (!withdrawal.walletId) {
@@ -389,9 +471,9 @@ export async function processPendingWithdrawals(): Promise<number> {
         continue;
       }
 
-      let txHash: string;
-
-      if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
+      if (withdrawal.txHash) {
+        txHash = withdrawal.txHash;
+      } else if (withdrawal.network === "TRC20" && withdrawal.currency === "USDT") {
         txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
       } else if (isEvmUsdtNetwork(withdrawal.network) && withdrawal.currency === "USDT") {
         txHash = await processEvmUsdtWithdrawal(withdrawal, wallet, privateKey);
@@ -399,6 +481,7 @@ export async function processPendingWithdrawals(): Promise<number> {
         txHash = await processSplUsdtWithdrawal(withdrawal, wallet, privateKey);
       } else {
         const netAmount = getNetSendAmount(withdrawal);
+        assertPositiveNetAmount(netAmount);
         txHash = await broadcastFromPrivateKey(
           privateKey,
           withdrawal.toAddress,
@@ -408,6 +491,9 @@ export async function processPendingWithdrawals(): Promise<number> {
         );
       }
 
+      assertWithdrawalBroadcastResult(txHash, withdrawal);
+      await verifyWithdrawalTransactions(txHash, withdrawal.currency, withdrawal.network);
+
       await db
         .update(withdrawals)
         .set({ status: "completed", txHash, completedAt: new Date(), error: null })
@@ -416,6 +502,17 @@ export async function processPendingWithdrawals(): Promise<number> {
     } catch (err) {
       if (err instanceof PartialWithdrawalError) {
         netSent = err.netSent;
+      }
+
+      if (typeof txHash !== "undefined" && isConfirmationPendingError(err)) {
+        await db
+          .update(withdrawals)
+          .set({
+            txHash,
+            error: err instanceof Error ? err.message : "Awaiting on-chain confirmation",
+          })
+          .where(eq(withdrawals.id, withdrawal.id));
+        continue;
       }
 
       if (isRetryableWithdrawalError(err)) {
