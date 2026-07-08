@@ -15,6 +15,7 @@ import { buildEtherscanV2Url } from "./etherscan";
 import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
+import { pollEvmUsdtTransfersToAddress } from "../evm/poll-deposits";
 import { recordPollFailure, recordPollSuccess } from "./poll-health";
 
 interface DetectedPayment {
@@ -112,12 +113,9 @@ async function pollAddress(target: PollTarget): Promise<DetectedPayment[]> {
     return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY);
   }
   if (isEvmUsdtNetwork(network) && currency === "USDT") {
-    if (!process.env.ETHERSCAN_API_KEY) {
-      return [];
-    }
     const chain = getEvmChain(network);
     if (!chain) return [];
-    return pollEvm(address, currency, network, process.env.ETHERSCAN_API_KEY, chain.chainId);
+    return pollEvmUsdtViaRpc(address, network, chain);
   }
   if (network === "Bitcoin") {
     return pollBitcoin(address);
@@ -221,6 +219,40 @@ async function pollEvm(
       confirmations: Number(tx.confirmations ?? 0),
       depositAddress: address,
     }));
+}
+
+async function pollEvmUsdtViaRpc(
+  address: string,
+  network: string,
+  chain: NonNullable<ReturnType<typeof getEvmChain>>
+): Promise<DetectedPayment[]> {
+  try {
+    const transfers = await pollEvmUsdtTransfersToAddress(address, chain);
+    recordPollSuccess(network, "USDT");
+    return transfers.map((t) => ({
+      txHash: t.txHash,
+      amount: t.amount,
+      currency: "USDT",
+      network,
+      confirmations: t.confirmations,
+      depositAddress: address,
+      blockTimestamp: t.blockTimestamp,
+    }));
+  } catch (rpcErr) {
+    const apiKey = process.env.ETHERSCAN_API_KEY;
+    if (apiKey) {
+      console.warn(
+        `[payment-poller] RPC USDT poll failed for ${network}/${address}, trying Etherscan:`,
+        rpcErr
+      );
+      return pollEvm(address, "USDT", network, apiKey, chain.chainId);
+    }
+
+    const msg = rpcErr instanceof Error ? rpcErr.message : String(rpcErr);
+    console.warn(`[payment-poller] RPC USDT poll failed for ${network}/${address}: ${msg}`);
+    recordPollFailure(network, "USDT", msg);
+    return [];
+  }
 }
 
 async function pollBitcoin(address: string): Promise<DetectedPayment[]> {
@@ -405,12 +437,10 @@ export async function pollAllNetworks() {
   const targets = await getPollTargets();
   const detected: DetectedPayment[] = [];
 
-  const needsEtherscan = targets.some(
-    (t) => t.network === "ERC20" || isEvmUsdtNetwork(t.network)
-  );
-  if (needsEtherscan && !process.env.ETHERSCAN_API_KEY) {
+  const needsLegacyEtherscan = targets.some((t) => t.network === "ERC20");
+  if (needsLegacyEtherscan && !process.env.ETHERSCAN_API_KEY) {
     console.warn(
-      "[payment-poller] ETHERSCAN_API_KEY missing — EVM USDT payments (BSC, Polygon, Arbitrum, Base, Avalanche) will not be detected"
+      "[payment-poller] ETHERSCAN_API_KEY missing — legacy ERC20 token polling disabled (USDT EVM chains use RPC)"
     );
   }
 
