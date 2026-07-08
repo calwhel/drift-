@@ -67,11 +67,6 @@ export async function GET() {
     return unhealthy(body);
   }
 
-  if (!process.env.ETHERSCAN_API_KEY) {
-    body.error = "ETHERSCAN_API_KEY missing — EVM USDT payment detection is disabled";
-    return unhealthy(body);
-  }
-
   try {
     await db.execute(sql`SELECT 1`);
 
@@ -120,6 +115,12 @@ export async function GET() {
     if (isPollDegraded()) {
       body.error = "Payment detection is degraded — blockchain API failures detected";
       return unhealthy(body);
+    }
+
+    if (!process.env.ETHERSCAN_API_KEY) {
+      body.warning =
+        (body.warning ? `${body.warning}; ` : "") +
+        "ETHERSCAN_API_KEY not set — optional fallback for EVM detection (RPC is primary)";
     }
 
     if (!process.env.WALLET_ENCRYPTION_KEY) {

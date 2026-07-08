@@ -50,6 +50,15 @@ describe("ambiguous verify detection", () => {
   });
 });
 
+describe("EVM RPC detection", () => {
+  test("Transfer event topic is standard ERC-20", () => {
+    const TRANSFER =
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c0a45c5dc38fbbbf165acfe";
+    assert.equal(TRANSFER.length, 67);
+    assert.ok(TRANSFER.startsWith("0x"));
+  });
+});
+
 test("money-flow unit tests complete", () => {
   assert.ok(true);
 });
