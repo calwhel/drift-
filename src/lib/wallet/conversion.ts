@@ -62,12 +62,24 @@ export function quoteConversion(
   };
 }
 
+/** Custodial = Drift-generated, or legacy rows that still hold an encrypted key. */
+export function isCustodialWallet(wallet: {
+  walletType: string;
+  encryptedPrivateKey?: string | null;
+}): boolean {
+  return (
+    wallet.walletType === "generated" ||
+    Boolean(wallet.encryptedPrivateKey && wallet.encryptedPrivateKey.length > 0)
+  );
+}
+
 export function assertWalletConvertible(wallet: {
   currency: string;
   network: string;
   walletType: string;
+  encryptedPrivateKey?: string | null;
 }) {
-  if (wallet.walletType !== "generated") {
+  if (!isCustodialWallet(wallet)) {
     throw new Error("Conversions are only available for Drift custodial wallets");
   }
   if (!isStablecoin(wallet.currency)) {
@@ -83,8 +95,20 @@ export function assertWalletConvertible(wallet: {
 
 /** Shared validation for quote + execute (same rules). */
 export function validateConversionPair(
-  from: { currency: string; network: string; walletType: string; userId: string },
-  to: { currency: string; network: string; walletType: string; userId: string },
+  from: {
+    currency: string;
+    network: string;
+    walletType: string;
+    userId: string;
+    encryptedPrivateKey?: string | null;
+  },
+  to: {
+    currency: string;
+    network: string;
+    walletType: string;
+    userId: string;
+    encryptedPrivateKey?: string | null;
+  },
   userId: string
 ) {
   if (from.userId !== userId || to.userId !== userId) {

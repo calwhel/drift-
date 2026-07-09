@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { useAdminSidebar } from "@/components/admin/sidebar-context";
-import { getNetworkLabel, isMerchantNetworkEnabled } from "@/lib/constants";
+import {
+  getNetworkLabel,
+  isMerchantNetworkEnabled,
+  isLegacyTronNetwork,
+} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 interface UserRow {
@@ -20,6 +24,8 @@ interface WalletRow {
   walletType: string;
   label: string | null;
   address: string;
+  isCustodial?: boolean;
+  hasPrivateKey?: boolean;
 }
 
 interface TransferRow {
@@ -48,6 +54,7 @@ interface LegacyTronWallet {
   onChainBalance: number;
   onChainError?: string;
   nativeGas?: { amount: number; symbol: string } | null;
+  walletType?: string;
 }
 
 interface ConversionQuote {
@@ -65,7 +72,9 @@ export default function AdminConversionsPage() {
   const [userWallets, setUserWallets] = useState<WalletRow[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [quoteError, setQuoteError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [creatingWallet, setCreatingWallet] = useState(false);
   const [sweepLoading, setSweepLoading] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -74,15 +83,44 @@ export default function AdminConversionsPage() {
     toWalletId: "",
     amount: "",
     note: "",
+    force: true,
   });
   const [quote, setQuote] = useState<ConversionQuote | null>(null);
 
-  const [sweepForm, setSweepForm] = useState<Record<string, { toAddress: string; amount: string }>>({});
+  const [sweepForm, setSweepForm] = useState<Record<string, { toAddress: string; amount: string }>>(
+    {}
+  );
 
-  const custodialWallets = useMemo(
-    () => userWallets.filter((w) => w.walletType === "generated"),
+  /** Sources: any custodial wallet including legacy TRC20 */
+  const sourceWallets = useMemo(
+    () =>
+      userWallets.filter(
+        (w) =>
+          w.isCustodial === true ||
+          w.walletType === "generated" ||
+          w.hasPrivateKey === true ||
+          isLegacyTronNetwork(w.network)
+      ),
     [userWallets]
   );
+
+  /** Destinations: active merchant networks only (no TRC20) */
+  const destWallets = useMemo(
+    () =>
+      userWallets.filter(
+        (w) =>
+          w.id !== form.fromWalletId &&
+          isMerchantNetworkEnabled(w.currency, w.network) &&
+          (w.isCustodial === true || w.walletType === "generated" || w.hasPrivateKey === true)
+      ),
+    [userWallets, form.fromWalletId]
+  );
+
+  const fromWallet = sourceWallets.find((w) => w.id === form.fromWalletId);
+  const needsForce =
+    fromWallet != null &&
+    isLegacyTronNetwork(fromWallet.network) &&
+    Number(fromWallet.balance) > 0;
 
   const load = useCallback(() => {
     fetch("/api/admin/users")
@@ -101,6 +139,19 @@ export default function AdminConversionsPage() {
       .catch(() => setLegacyWallets([]));
   }, []);
 
+  const reloadUserWallets = useCallback((userId: string) => {
+    return fetch(`/api/admin/user-wallets?user_id=${userId}`)
+      .then((r) => (r.ok ? r.json() : { wallets: [] }))
+      .then((d) => {
+        setUserWallets(d.wallets ?? []);
+        return d.wallets ?? [];
+      })
+      .catch(() => {
+        setUserWallets([]);
+        return [] as WalletRow[];
+      });
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -110,18 +161,17 @@ export default function AdminConversionsPage() {
       setUserWallets([]);
       return;
     }
-    fetch(`/api/admin/user-wallets?user_id=${form.userId}`)
-      .then((r) => (r.ok ? r.json() : { wallets: [] }))
-      .then((d) => setUserWallets(d.wallets ?? []))
-      .catch(() => setUserWallets([]));
-  }, [form.userId]);
+    reloadUserWallets(form.userId);
+  }, [form.userId, reloadUserWallets]);
 
   useEffect(() => {
     if (!form.fromWalletId || !form.toWalletId || !form.amount || Number(form.amount) <= 0) {
       setQuote(null);
+      setQuoteError("");
       return;
     }
     const timer = setTimeout(() => {
+      setQuoteError("");
       fetch("/api/admin/conversions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -130,14 +180,26 @@ export default function AdminConversionsPage() {
           from_wallet_id: form.fromWalletId,
           to_wallet_id: form.toWalletId,
           amount: Number(form.amount),
+          force: form.force,
         }),
       })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => setQuote(d?.quote ?? null))
-        .catch(() => setQuote(null));
+        .then(async (r) => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            setQuote(null);
+            setQuoteError((d as { error?: string }).error ?? "Quote failed");
+            return;
+          }
+          setQuote(d.quote ?? null);
+          setQuoteError("");
+        })
+        .catch(() => {
+          setQuote(null);
+          setQuoteError("Quote failed");
+        });
     }, 300);
     return () => clearTimeout(timer);
-  }, [form.userId, form.fromWalletId, form.toWalletId, form.amount]);
+  }, [form.userId, form.fromWalletId, form.toWalletId, form.amount, form.force]);
 
   const handleConvert = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,6 +216,7 @@ export default function AdminConversionsPage() {
           to_wallet_id: form.toWalletId,
           amount: Number(form.amount),
           note: form.note || undefined,
+          force: form.force,
         }),
       });
       const data = await res.json();
@@ -164,16 +227,69 @@ export default function AdminConversionsPage() {
       setForm((f) => ({ ...f, amount: "", note: "" }));
       setQuote(null);
       load();
-      if (form.userId) {
-        fetch(`/api/admin/user-wallets?user_id=${form.userId}`)
-          .then((r) => (r.ok ? r.json() : { wallets: [] }))
-          .then((d) => setUserWallets(d.wallets ?? []));
-      }
+      if (form.userId) await reloadUserWallets(form.userId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Conversion failed");
     } finally {
       setLoading(false);
     }
+  };
+
+  const createSplDestination = async () => {
+    if (!form.userId) return;
+    setCreatingWallet(true);
+    setError("");
+    setSuccess("");
+    try {
+      const currency = fromWallet?.currency === "USDC" ? "USDC" : "USDT";
+      const res = await fetch("/api/admin/user-wallets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: form.userId,
+          currency,
+          network: "SPL",
+          label: `${currency} Solana (admin)`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok && res.status !== 409) throw new Error(data.error ?? "Failed to create wallet");
+      const wallets = await reloadUserWallets(form.userId);
+      const destId = data.wallet?.id ?? data.walletId;
+      const found =
+        destId ||
+        wallets.find((w: WalletRow) => w.currency === currency && w.network === "SPL")?.id;
+      if (found) setForm((f) => ({ ...f, toWalletId: found }));
+      setSuccess(`Solana ${currency} wallet ready for this merchant`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create wallet");
+    } finally {
+      setCreatingWallet(false);
+    }
+  };
+
+  const selectLegacyForConvert = async (w: LegacyTronWallet) => {
+    setError("");
+    setSuccess("");
+    setForm({
+      userId: w.userId,
+      fromWalletId: w.id,
+      toWalletId: "",
+      amount: w.ledgerBalance > 0 ? String(w.ledgerBalance) : "",
+      note: `TRC20 exit — ${w.userEmail}`,
+      force: true,
+    });
+    const wallets = await reloadUserWallets(w.userId);
+    const dest = wallets.find(
+      (x: WalletRow) =>
+        x.currency === w.currency &&
+        isMerchantNetworkEnabled(x.currency, x.network) &&
+        (x.isCustodial || x.walletType === "generated" || x.hasPrivateKey)
+    );
+    if (dest) {
+      setForm((f) => ({ ...f, toWalletId: dest.id }));
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSweep = async (walletId: string) => {
@@ -213,7 +329,7 @@ export default function AdminConversionsPage() {
     <>
       <DashboardHeader
         title="Conversions & Treasury"
-        subtitle="Move ledger balances between coins/networks · exit legacy Tron on-chain"
+        subtitle="Move ledger balances between coins/networks · exit legacy Tron"
         onMenuClick={() => setOpen(true)}
       />
 
@@ -230,10 +346,9 @@ export default function AdminConversionsPage() {
         )}
 
         <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          <strong>Ledger conversions</strong> move balances at 1:1 (USDT ↔ USDC). They do not bridge
-          on-chain tokens. Cross-network convert is blocked while the source still has on-chain funds —
-          withdraw or sweep first. <strong>Tron sweep</strong> below sends on-chain tokens out and
-          debits ledger by default so books stay in sync.
+          <strong>TRC20 exit:</strong> select the merchant → From = USDT (TRC20 — legacy) → To =
+          Solana/Base/Polygon. Use <strong>Force ledger convert</strong> for Tron balances (moves
+          books only). On-chain tokens stay on Tron until you withdraw or sweep below.
         </p>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -252,6 +367,7 @@ export default function AdminConversionsPage() {
                       toWalletId: "",
                       amount: "",
                       note: "",
+                      force: true,
                     })
                   }
                   required
@@ -275,13 +391,19 @@ export default function AdminConversionsPage() {
                   disabled={!form.userId}
                 >
                   <option value="">Select source…</option>
-                  {custodialWallets.map((w) => (
+                  {sourceWallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {getNetworkLabel(w.currency, w.network)} — {Number(w.balance).toFixed(4)}{" "}
                       {w.currency}
+                      {isLegacyTronNetwork(w.network) ? " [LEGACY]" : ""}
                     </option>
                   ))}
                 </select>
+                {form.userId && sourceWallets.length === 0 && (
+                  <p className="mt-1 text-2xs text-amber-400">
+                    No custodial wallets found for this merchant.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -294,19 +416,28 @@ export default function AdminConversionsPage() {
                   disabled={!form.userId}
                 >
                   <option value="">Select destination…</option>
-                  {custodialWallets
-                    .filter(
-                      (w) =>
-                        w.id !== form.fromWalletId &&
-                        isMerchantNetworkEnabled(w.currency, w.network)
-                    )
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {getNetworkLabel(w.currency, w.network)} — {Number(w.balance).toFixed(4)}{" "}
-                        {w.currency}
-                      </option>
-                    ))}
+                  {destWallets.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {getNetworkLabel(w.currency, w.network)} — {Number(w.balance).toFixed(4)}{" "}
+                      {w.currency}
+                    </option>
+                  ))}
                 </select>
+                {form.userId && destWallets.length === 0 && (
+                  <div className="mt-2">
+                    <p className="mb-2 text-2xs text-amber-400">
+                      No Solana/Base/Polygon destination yet. Create one:
+                    </p>
+                    <button
+                      type="button"
+                      onClick={createSplDestination}
+                      disabled={creatingWallet}
+                      className="btn-secondary px-3 py-2 text-2xs"
+                    >
+                      {creatingWallet ? "Creating…" : "Create Solana USDT wallet"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -320,14 +451,52 @@ export default function AdminConversionsPage() {
                   required
                   disabled={!form.fromWalletId}
                 />
+                {fromWallet && Number(fromWallet.balance) > 0 && (
+                  <button
+                    type="button"
+                    className="mt-1 text-2xs text-drift-purple hover:underline"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, amount: String(Number(fromWallet.balance)) }))
+                    }
+                  >
+                    Use full balance ({Number(fromWallet.balance).toFixed(4)})
+                  </button>
+                )}
               </div>
+
+              <label className="flex items-start gap-2 text-xs text-drift-muted">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={form.force}
+                  onChange={(e) => setForm((f) => ({ ...f, force: e.target.checked }))}
+                />
+                <span>
+                  Force ledger convert (required for TRC20 exit while on-chain funds remain). Moves
+                  Drift books only — does not bridge tokens.
+                  {needsForce ? " Recommended for this source." : ""}
+                </span>
+              </label>
+
+              {quoteError && (
+                <p className="rounded border border-drift-red/30 bg-drift-red/10 px-3 py-2 text-xs text-drift-red">
+                  {quoteError}
+                  {!form.force && (
+                    <button
+                      type="button"
+                      className="ml-2 underline"
+                      onClick={() => setForm((f) => ({ ...f, force: true }))}
+                    >
+                      Enable force
+                    </button>
+                  )}
+                </p>
+              )}
 
               {quote && (
                 <p className="rounded border border-drift-border bg-drift-bg/50 px-3 py-2 text-xs text-drift-muted">
                   You receive{" "}
-                  <span className="font-semibold text-white">
-                    {quote.creditAmount.toFixed(4)}
-                  </span>{" "}
+                  <span className="font-semibold text-white">{quote.creditAmount.toFixed(4)}</span>{" "}
                   at 1:1 (fee: {quote.feeAmount})
                 </p>
               )}
@@ -362,13 +531,11 @@ export default function AdminConversionsPage() {
                     <p className="font-medium text-white">{row.userEmail}</p>
                     <p className="mt-1 text-drift-muted">
                       {Number(row.transfer.debitAmount).toFixed(4)} {row.transfer.fromCurrency} (
-                      {row.transfer.fromNetwork}) →{" "}
-                      {Number(row.transfer.creditAmount).toFixed(4)} {row.transfer.toCurrency} (
-                      {row.transfer.toNetwork})
+                      {row.transfer.fromNetwork}) → {Number(row.transfer.creditAmount).toFixed(4)}{" "}
+                      {row.transfer.toCurrency} ({row.transfer.toNetwork})
                     </p>
                     <p className="mt-1 text-drift-muted">
-                      {row.transfer.createdBy} ·{" "}
-                      {new Date(row.transfer.createdAt).toLocaleString()}
+                      {row.transfer.createdBy} · {new Date(row.transfer.createdAt).toLocaleString()}
                     </p>
                   </div>
                 ))
@@ -378,10 +545,11 @@ export default function AdminConversionsPage() {
         </div>
 
         <section className="card mt-4 p-4">
-          <h2 className="section-title mb-2">Legacy Tron (TRC20) — On-chain Exit</h2>
+          <h2 className="section-title mb-2">Legacy Tron (TRC20)</h2>
           <p className="mb-4 text-2xs text-drift-muted">
-            Sweep on-chain USDT/USDC from retired TRC20 custodial wallets to an external address.
-            Ledger conversions above handle book balances; this moves actual tokens on Tron.
+            <strong>Convert ledger</strong> moves the Drift balance to Solana/Base/Polygon.{" "}
+            <strong>On-chain sweep</strong> sends actual Tron tokens to an external address (and
+            debits ledger).
           </p>
           {legacyWallets.length === 0 ? (
             <p className="text-sm text-drift-muted">No legacy TRC20 wallets found</p>
@@ -431,6 +599,15 @@ export default function AdminConversionsPage() {
                           )}
                         </div>
                       </div>
+                      {w.ledgerBalance > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => selectLegacyForConvert(w)}
+                          className="btn-primary px-3 py-2 text-2xs"
+                        >
+                          Convert ledger →
+                        </button>
+                      )}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <input
