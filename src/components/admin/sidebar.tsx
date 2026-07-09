@@ -10,6 +10,7 @@ const adminNavItems = [
   { label: "Overview", href: "/admin/overview", icon: "LayoutDashboard" },
   { label: "Users", href: "/admin/users", icon: "Users" },
   { label: "Transactions", href: "/admin/transactions", icon: "ArrowRightLeft" },
+  { label: "Conversions", href: "/admin/conversions", icon: "RefreshCcw" },
   { label: "Platform Wallets", href: "/admin/wallets", icon: "Wallet" },
 ];
 
