@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { db, wallets } from "@/lib/db";
 import { fetchOnChainBalance } from "@/lib/blockchain/balances";
@@ -12,9 +12,11 @@ const schema = z.object({
   wallet_id: z.string().uuid(),
   to_address: z.string().min(10),
   amount: z.number().positive().optional(),
+  /** Also debit ledger by the swept amount (keeps books in sync). Default true. */
+  debit_ledger: z.boolean().optional().default(true),
 });
 
-/** On-chain sweep USDT from a legacy TRC20 custodial wallet to an external address. */
+/** On-chain sweep USDT/USDC from a legacy TRC20 custodial wallet to an external address. */
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin();
@@ -54,6 +56,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ledgerBalance = Number(wallet.balance);
+    if (data.debit_ledger !== false && ledgerBalance + 0.000001 < sendAmount) {
+      return NextResponse.json(
+        {
+          error:
+            `Ledger balance (${ledgerBalance.toFixed(4)}) is less than sweep amount (${sendAmount.toFixed(4)}). ` +
+            `Reduce the sweep amount, or convert/adjust ledger first. Pass debit_ledger=false only if you intentionally want on-chain-only exit.`,
+        },
+        { status: 400 }
+      );
+    }
+
     await fundTronAddressIfNeeded(wallet.address);
     const txHash = await broadcastFromPrivateKey(
       privateKey,
@@ -64,11 +78,26 @@ export async function POST(req: NextRequest) {
     );
     await reclaimTronTrxToGasWallet(privateKey, wallet.address);
 
+    let ledgerDebited = 0;
+    if (data.debit_ledger !== false) {
+      const debit = Math.min(sendAmount, ledgerBalance);
+      if (debit > 0) {
+        await db
+          .update(wallets)
+          .set({
+            balance: sql`GREATEST(0, ${wallets.balance}::numeric - ${String(debit)})`,
+          })
+          .where(eq(wallets.id, wallet.id));
+        ledgerDebited = debit;
+      }
+    }
+
     await logAudit(admin.id, "treasury.tron_sweep", "wallet", wallet.id, {
       toAddress: data.to_address,
       amount: sendAmount,
       txHash,
       userId: wallet.userId,
+      ledgerDebited,
     });
 
     return NextResponse.json({
@@ -76,7 +105,10 @@ export async function POST(req: NextRequest) {
       txHash,
       amount: sendAmount,
       currency: wallet.currency,
-      message: `Sent ${sendAmount.toFixed(4)} ${wallet.currency} on-chain to ${data.to_address}`,
+      ledgerDebited,
+      message: `Sent ${sendAmount.toFixed(4)} ${wallet.currency} on-chain to ${data.to_address}${
+        ledgerDebited > 0 ? ` (ledger debited ${ledgerDebited.toFixed(4)})` : ""
+      }`,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

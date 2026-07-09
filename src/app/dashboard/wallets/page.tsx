@@ -7,7 +7,12 @@ import { WalletBalanceChart, type BalanceChartPoint } from "@/components/dashboa
 import { CryptoIcon } from "@/components/crypto-icon";
 import { Icon } from "@/components/icons";
 import { cn, blockExplorerAddressUrl } from "@/lib/utils";
-import { MERCHANT_WALLET_NETWORKS, getNetworkLabel, isLegacyTronNetwork } from "@/lib/constants";
+import {
+  MERCHANT_WALLET_NETWORKS,
+  getNetworkLabel,
+  isLegacyTronNetwork,
+  isMerchantNetworkEnabled,
+} from "@/lib/constants";
 
 const RANGES = ["7D", "30D", "90D", "1Y"];
 
@@ -162,7 +167,9 @@ export default function WalletsPage() {
     (w) => w.walletType === "generated" && Number(w.balance) >= 0
   );
 
-  const convertTargets = custodialWallets.filter((w) => w.id !== convertFromId);
+  const convertTargets = custodialWallets.filter(
+    (w) => w.id !== convertFromId && isMerchantNetworkEnabled(w.currency, w.network)
+  );
 
   useEffect(() => {
     if (!convertFromId || !convertToId || !convertAmount || Number(convertAmount) <= 0) {
@@ -357,10 +364,11 @@ export default function WalletsPage() {
         )}
 
         <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200">
-          Drift-generated wallets are polled every 60 seconds. Use <strong>Convert</strong> to move
-          balances between USDT/USDC on Solana, Base, Polygon, and other supported networks — instant,
-          no platform gas. Withdraw from Solana or EVM networks for low fees; Tron (TRC20) is retired
-          for new wallets. Network fees are deducted from your withdrawal, not paid by Drift.
+          Drift-generated wallets are polled every 60 seconds. Use <strong>Convert</strong> for
+          same-network USDT ↔ USDC swaps, or to move ledger between active networks when the source
+          has no remaining on-chain balance. Tron (TRC20) is retired — withdraw TRC20 on-chain first,
+          then convert any leftover ledger. Network fees are deducted from your withdrawal, not paid
+          by Drift.
         </p>
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -520,7 +528,7 @@ export default function WalletsPage() {
                       ))}
                       {wallets.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-5 py-10 text-center text-drift-muted">
+                          <td colSpan={6} className="px-5 py-10 text-center text-drift-muted">
                             No wallets yet. Create your first wallet below.
                           </td>
                         </tr>
@@ -723,7 +731,8 @@ export default function WalletsPage() {
             <form onSubmit={handleConvert} className="card-elevated w-full max-w-md p-6">
               <h3 className="mb-1 text-lg font-semibold text-white">Convert Balance</h3>
               <p className="mb-4 text-[12px] text-drift-muted">
-                Instant ledger move at 1:1 between USDT and USDC. No on-chain gas from Drift.
+                Instant ledger move at 1:1 between USDT and USDC. Does not bridge tokens on-chain —
+                withdraw on the source network first if funds are still on-chain.
               </p>
               <div className="space-y-3">
                 <div>

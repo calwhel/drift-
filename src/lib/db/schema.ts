@@ -200,6 +200,9 @@ export const withdrawals = pgTable("withdrawals", {
   error: text("error"),
   balanceRefundedAt: timestamp("balance_refunded_at", { withTimezone: true }),
   balanceRefundedAmount: numeric("balance_refunded_amount", { precision: 20, scale: 8 }),
+  /** Cumulative on-chain amount successfully broadcast (net of fee), for multi-leg resume */
+  netSent: numeric("net_sent", { precision: 20, scale: 8 }).notNull().default("0"),
+  processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

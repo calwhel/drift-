@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
-import { convertWalletBalance, quoteConversion } from "@/lib/wallet/conversion";
+import {
+  convertWalletBalance,
+  quoteConversion,
+  validateConversionPair,
+  assertConversionOnChainSafe,
+} from "@/lib/wallet/conversion";
 import { db, wallets, ledgerTransfers, users } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 
@@ -12,6 +17,8 @@ const createSchema = z.object({
   to_wallet_id: z.string().uuid(),
   amount: z.number().positive(),
   note: z.string().optional(),
+  /** Allow cross-network convert even when source still has on-chain funds (treasury cleanup) */
+  force: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -51,11 +58,13 @@ export async function POST(req: NextRequest) {
       createdBy: "admin",
       adminUserId: admin.id,
       note: data.note,
+      skipOnChainCheck: data.force === true,
     });
 
     await logAudit(admin.id, "admin.conversion", "ledger_transfer", transfer.id, {
       userId: data.user_id,
       quote,
+      force: data.force === true,
     });
 
     return NextResponse.json({ transfer, quote }, { status: 201 });
@@ -85,8 +94,18 @@ export async function PUT(req: NextRequest) {
       db.select().from(wallets).where(eq(wallets.id, data.to_wallet_id)).limit(1),
     ]);
 
-    if (!fromWallet[0] || !toWallet[0] || fromWallet[0].userId !== data.user_id) {
+    if (
+      !fromWallet[0] ||
+      !toWallet[0] ||
+      fromWallet[0].userId !== data.user_id ||
+      toWallet[0].userId !== data.user_id
+    ) {
       return NextResponse.json({ error: "Wallet not found for user" }, { status: 404 });
+    }
+
+    validateConversionPair(fromWallet[0], toWallet[0], data.user_id);
+    if (!data.force) {
+      await assertConversionOnChainSafe(fromWallet[0], toWallet[0], data.amount);
     }
 
     const quote = quoteConversion(
@@ -94,7 +113,7 @@ export async function PUT(req: NextRequest) {
       fromWallet[0].network,
       toWallet[0].currency,
       toWallet[0].network,
-      data.amount
+      Math.round(data.amount * 1e6) / 1e6
     );
 
     return NextResponse.json({ quote });

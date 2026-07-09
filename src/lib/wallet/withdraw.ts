@@ -57,12 +57,17 @@ function assertWithdrawalBroadcastResult(
 async function appendWithdrawalTxHash(
   withdrawalId: string,
   newHash: string,
-  existing?: string | null
+  existing?: string | null,
+  netSent?: number
 ): Promise<string> {
   const combined = existing?.trim() ? `${existing},${newHash}` : newHash;
   await db
     .update(withdrawals)
-    .set({ txHash: combined, error: null })
+    .set({
+      txHash: combined,
+      error: null,
+      ...(netSent != null ? { netSent: String(netSent) } : {}),
+    })
     .where(eq(withdrawals.id, withdrawalId));
   return combined;
 }
@@ -73,40 +78,60 @@ async function refundWithdrawalBalance(
     walletId: string | null;
     amount: string;
     balanceRefundedAt?: Date | null;
+    netSent?: string | null;
   },
-  netSent = 0
+  netSentOverride?: number
 ): Promise<number> {
   if (!withdrawal.walletId) return 0;
   if (withdrawal.balanceRefundedAt) return 0;
 
   const gross = Number(withdrawal.amount);
+  const netSent =
+    netSentOverride != null
+      ? netSentOverride
+      : Number(withdrawal.netSent ?? 0);
   const refund = Math.round((gross - netSent) * 1e6) / 1e6;
   if (refund <= 0) return 0;
 
-  const [wallet] = await db
-    .select({ balance: wallets.balance })
-    .from(wallets)
-    .where(eq(wallets.id, withdrawal.walletId))
-    .limit(1);
+  return db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(withdrawals)
+      .set({
+        balanceRefundedAt: new Date(),
+        balanceRefundedAmount: String(refund),
+      })
+      .where(
+        and(eq(withdrawals.id, withdrawal.id), isNull(withdrawals.balanceRefundedAt))
+      )
+      .returning({ id: withdrawals.id });
 
-  if (!wallet) return 0;
+    if (!claimed) return 0;
 
-  await db
-    .update(wallets)
-    .set({
-      balance: sql`${wallets.balance}::numeric + ${String(refund)}`,
-    })
-    .where(eq(wallets.id, withdrawal.walletId));
+    await tx
+      .update(wallets)
+      .set({
+        balance: sql`${wallets.balance}::numeric + ${String(refund)}`,
+      })
+      .where(eq(wallets.id, withdrawal.walletId!));
 
-  await db
+    return refund;
+  });
+}
+
+/** Claim a pending withdrawal for processing (prevents concurrent double-broadcast). */
+async function claimPendingWithdrawal(id: string) {
+  const [claimed] = await db
     .update(withdrawals)
-    .set({
-      balanceRefundedAt: new Date(),
-      balanceRefundedAmount: String(refund),
-    })
-    .where(eq(withdrawals.id, withdrawal.id));
-
-  return refund;
+    .set({ status: "processing", processingStartedAt: new Date() })
+    .where(
+      and(
+        eq(withdrawals.id, id),
+        eq(withdrawals.status, "pending"),
+        isNull(withdrawals.balanceRefundedAt)
+      )
+    )
+    .returning();
+  return claimed ?? null;
 }
 
 const RESTORED_BALANCE_MSG =
@@ -143,18 +168,26 @@ async function processTrc20UsdtWithdrawal(
     currency: string;
     network: string;
     txHash: string | null;
+    netSent?: string | null;
   },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
-  if (withdrawal.txHash?.trim()) {
-    return withdrawal.txHash;
-  }
-
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
-  let remaining = netAmount;
-  const txHashes: string[] = [];
+
+  const alreadySent = Number(withdrawal.netSent ?? 0);
+  let remaining = Math.round((netAmount - alreadySent) * 1e6) / 1e6;
+  const txHashes: string[] = withdrawal.txHash?.trim()
+    ? withdrawal.txHash.split(",").map((h) => h.trim()).filter(Boolean)
+    : [];
+
+  if (remaining <= 0.000001) {
+    if (txHashes.length === 0) {
+      throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
+    }
+    return txHashes.join(",");
+  }
 
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
   const custodialBalance = custodial.amount ?? 0;
@@ -170,8 +203,14 @@ async function processTrc20UsdtWithdrawal(
         wallet.currency
       );
       txHashes.push(hash);
-      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+      await appendWithdrawalTxHash(
+        withdrawal.id,
+        hash,
+        txHashes.slice(0, -1).join(",") || null,
+        netSentSoFar
+      );
     }
 
     if (remaining > 0.000001) {
@@ -179,10 +218,10 @@ async function processTrc20UsdtWithdrawal(
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
-      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+      if (custodialBalance + depositTotal + 0.000001 < remaining) {
         const skipped = depositSources.length - spendable.length;
         throw new Error(
-          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)} spendable across wallet + ${spendable.length} deposit address(es), need ${netAmount.toFixed(4)} net)` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)} spendable across wallet + ${spendable.length} deposit address(es), need ${remaining.toFixed(4)} remaining)` +
             (skipped > 0 ? ` — ${skipped} deposit address(es) missing keys and cannot be swept.` : "") +
             " Payments may still be confirming — wait a few minutes and retry."
         );
@@ -201,8 +240,14 @@ async function processTrc20UsdtWithdrawal(
           wallet.currency
         );
         txHashes.push(hash);
-        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+        const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+        await appendWithdrawalTxHash(
+          withdrawal.id,
+          hash,
+          txHashes.slice(0, -1).join(",") || null,
+          netSentSoFar
+        );
       }
     }
 
@@ -212,7 +257,7 @@ async function processTrc20UsdtWithdrawal(
       );
     }
   } catch (err) {
-    const netSent = netAmount - remaining;
+    const netSent = Math.round((netAmount - remaining) * 1e6) / 1e6;
     if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
       throw new PartialWithdrawalError(
         err instanceof Error ? err.message : "Withdrawal broadcast failed",
@@ -258,17 +303,27 @@ async function processEvmUsdtWithdrawal(
     currency: string;
     network: string;
     txHash: string | null;
+    netSent?: string | null;
   },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
-  if (withdrawal.txHash?.trim()) return withdrawal.txHash;
-
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
-  let remaining = netAmount;
-  const txHashes: string[] = [];
+
+  const alreadySent = Number(withdrawal.netSent ?? 0);
+  let remaining = Math.round((netAmount - alreadySent) * 1e6) / 1e6;
+  const txHashes: string[] = withdrawal.txHash?.trim()
+    ? withdrawal.txHash.split(",").map((h) => h.trim()).filter(Boolean)
+    : [];
   const network = withdrawal.network;
+
+  if (remaining <= 0.000001) {
+    if (txHashes.length === 0) {
+      throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
+    }
+    return txHashes.join(",");
+  }
 
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
   const custodialBalance = custodial.amount ?? 0;
@@ -285,8 +340,14 @@ async function processEvmUsdtWithdrawal(
         wallet.currency
       );
       txHashes.push(hash);
-      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+      await appendWithdrawalTxHash(
+        withdrawal.id,
+        hash,
+        txHashes.slice(0, -1).join(",") || null,
+        netSentSoFar
+      );
     }
 
     if (remaining > 0.000001) {
@@ -294,9 +355,9 @@ async function processEvmUsdtWithdrawal(
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
-      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+      if (custodialBalance + depositTotal + 0.000001 < remaining) {
         throw new Error(
-          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${remaining.toFixed(4)} remaining). ` +
             "Funds may still be confirming — wait a few minutes and retry."
         );
       }
@@ -315,8 +376,14 @@ async function processEvmUsdtWithdrawal(
           wallet.currency
         );
         txHashes.push(hash);
-        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+        const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+        await appendWithdrawalTxHash(
+          withdrawal.id,
+          hash,
+          txHashes.slice(0, -1).join(",") || null,
+          netSentSoFar
+        );
       }
     }
 
@@ -326,7 +393,7 @@ async function processEvmUsdtWithdrawal(
       );
     }
   } catch (err) {
-    const netSent = netAmount - remaining;
+    const netSent = Math.round((netAmount - remaining) * 1e6) / 1e6;
     if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
       throw new PartialWithdrawalError(
         err instanceof Error ? err.message : "Withdrawal broadcast failed",
@@ -366,16 +433,26 @@ async function processSplUsdtWithdrawal(
     currency: string;
     network: string;
     txHash: string | null;
+    netSent?: string | null;
   },
   wallet: typeof wallets.$inferSelect,
   privateKey: string
 ): Promise<string> {
-  if (withdrawal.txHash?.trim()) return withdrawal.txHash;
-
   const netAmount = getNetSendAmount(withdrawal);
   assertPositiveNetAmount(netAmount);
-  let remaining = netAmount;
-  const txHashes: string[] = [];
+
+  const alreadySent = Number(withdrawal.netSent ?? 0);
+  let remaining = Math.round((netAmount - alreadySent) * 1e6) / 1e6;
+  const txHashes: string[] = withdrawal.txHash?.trim()
+    ? withdrawal.txHash.split(",").map((h) => h.trim()).filter(Boolean)
+    : [];
+
+  if (remaining <= 0.000001) {
+    if (txHashes.length === 0) {
+      throw new Error(`No on-chain ${wallet.currency} transfer was broadcast for this withdrawal`);
+    }
+    return txHashes.join(",");
+  }
 
   const custodial = await fetchOnChainBalance(wallet.address, wallet.currency, wallet.network);
   const custodialBalance = custodial.amount ?? 0;
@@ -391,8 +468,14 @@ async function processSplUsdtWithdrawal(
         wallet.currency
       );
       txHashes.push(hash);
-      await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
       remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+      const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+      await appendWithdrawalTxHash(
+        withdrawal.id,
+        hash,
+        txHashes.slice(0, -1).join(",") || null,
+        netSentSoFar
+      );
     }
 
     if (remaining > 0.000001) {
@@ -400,9 +483,9 @@ async function processSplUsdtWithdrawal(
       const spendable = depositSources.filter((s) => s.derivationIndex != null);
       const depositTotal = spendable.reduce((sum, s) => sum + s.balance, 0);
 
-      if (custodialBalance + depositTotal + 0.000001 < netAmount) {
+      if (custodialBalance + depositTotal + 0.000001 < remaining) {
         throw new Error(
-          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${netAmount.toFixed(4)}). ` +
+          `Insufficient on-chain ${wallet.currency} (have ${(custodialBalance + depositTotal).toFixed(4)}, need ${remaining.toFixed(4)} remaining). ` +
             "Funds may still be confirming — wait a few minutes and retry."
         );
       }
@@ -420,8 +503,14 @@ async function processSplUsdtWithdrawal(
           wallet.currency
         );
         txHashes.push(hash);
-        await appendWithdrawalTxHash(withdrawal.id, hash, txHashes.slice(0, -1).join(",") || null);
         remaining = Math.round((remaining - sendAmount) * 1e6) / 1e6;
+        const netSentSoFar = Math.round((netAmount - remaining) * 1e6) / 1e6;
+        await appendWithdrawalTxHash(
+          withdrawal.id,
+          hash,
+          txHashes.slice(0, -1).join(",") || null,
+          netSentSoFar
+        );
       }
     }
 
@@ -431,7 +520,7 @@ async function processSplUsdtWithdrawal(
       );
     }
   } catch (err) {
-    const netSent = netAmount - remaining;
+    const netSent = Math.round((netAmount - remaining) * 1e6) / 1e6;
     if (netSent > 0.000001 && !(err instanceof PartialWithdrawalError)) {
       throw new PartialWithdrawalError(
         err instanceof Error ? err.message : "Withdrawal broadcast failed",
@@ -501,22 +590,58 @@ async function repairInvalidCompletedWithdrawals(): Promise<number> {
   for (const w of recent) {
     if (new Date(w.completedAt ?? w.createdAt).getTime() < cutoff) continue;
 
-    const primaryHash = w.txHash?.split(",")[0]?.trim() ?? "";
-    let invalid = !primaryHash || !isValidTxHashForNetwork(primaryHash, w.currency, w.network);
+    const hashes = (w.txHash ?? "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
 
-    if (!invalid && w.network === "TRC20" && isStablecoin(w.currency)) {
-      try {
-        await verifyTronTransactionSuccess(primaryHash, 20_000);
-      } catch {
+    let invalid = hashes.length === 0;
+    for (const hash of hashes) {
+      if (!isValidTxHashForNetwork(hash, w.currency, w.network)) {
         invalid = true;
+        break;
+      }
+    }
+
+    // Only mark invalid on definitive on-chain failure — never on timeout/ambiguous RPC errors
+    if (!invalid && w.network === "TRC20" && isStablecoin(w.currency)) {
+      for (const hash of hashes) {
+        try {
+          await verifyTronTransactionSuccess(hash, 20_000);
+        } catch (err) {
+          if (isVerifyAmbiguousError(err) || isConfirmationPendingError(err)) {
+            invalid = false;
+            break;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/failed on-chain/i.test(msg)) {
+            invalid = true;
+            break;
+          }
+          // Ambiguous / HTTP errors: skip repair for this withdrawal
+          invalid = false;
+          break;
+        }
       }
     }
 
     if (!invalid && isEvmUsdtNetwork(w.network) && isStablecoin(w.currency)) {
-      try {
-        await verifyEvmTransactionSuccess(primaryHash, w.network, 20_000);
-      } catch {
-        invalid = true;
+      for (const hash of hashes) {
+        try {
+          await verifyEvmTransactionSuccess(hash, w.network, 20_000);
+        } catch (err) {
+          if (isVerifyAmbiguousError(err) || isConfirmationPendingError(err)) {
+            invalid = false;
+            break;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/failed on-chain/i.test(msg)) {
+            invalid = true;
+            break;
+          }
+          invalid = false;
+          break;
+        }
       }
     }
 
@@ -580,7 +705,29 @@ export async function refundWithdrawalById(withdrawalId: string): Promise<number
 
   if (!w) throw new Error("Withdrawal not found");
   if (w.status === "completed") throw new Error("Cannot refund a completed withdrawal");
-  return refundWithdrawalBalance(w);
+
+  const refunded = await refundWithdrawalBalance(w);
+
+  // Cancel so the poller cannot broadcast after a manual refund
+  if (w.status === "pending" || w.status === "processing") {
+    await db
+      .update(withdrawals)
+      .set({
+        status: "failed",
+        error:
+          refunded > 0
+            ? `Admin refund applied. ${RESTORED_BALANCE_MSG}`
+            : "Admin cancelled this withdrawal.",
+      })
+      .where(
+        and(
+          eq(withdrawals.id, withdrawalId),
+          or(eq(withdrawals.status, "pending"), eq(withdrawals.status, "processing"))
+        )
+      );
+  }
+
+  return refunded;
 }
 
 export async function processPendingWithdrawals(): Promise<number> {
@@ -588,16 +735,32 @@ export async function processPendingWithdrawals(): Promise<number> {
   await repairUnrefundedFailedWithdrawals();
   await repairRetryableFailedWithdrawals();
 
+  // Re-queue stuck processing rows older than 10 minutes (crashed worker)
+  const stuckCutoff = new Date(Date.now() - 10 * 60 * 1000);
+  await db
+    .update(withdrawals)
+    .set({ status: "pending", processingStartedAt: null })
+    .where(
+      and(
+        eq(withdrawals.status, "processing"),
+        isNull(withdrawals.balanceRefundedAt),
+        sql`${withdrawals.processingStartedAt} < ${stuckCutoff}`
+      )
+    );
+
   const pending = await db
     .select()
     .from(withdrawals)
-    .where(eq(withdrawals.status, "pending"));
+    .where(and(eq(withdrawals.status, "pending"), isNull(withdrawals.balanceRefundedAt)));
 
   let processed = 0;
 
-  for (const withdrawal of pending) {
-    let netSent = 0;
-    let txHash: string | undefined;
+  for (const row of pending) {
+    const withdrawal = await claimPendingWithdrawal(row.id);
+    if (!withdrawal) continue;
+
+    let netSent = Number(withdrawal.netSent ?? 0);
+    let txHash: string | undefined = withdrawal.txHash ?? undefined;
 
     try {
       if (!withdrawal.walletId) {
@@ -648,7 +811,12 @@ export async function processPendingWithdrawals(): Promise<number> {
         continue;
       }
 
-      if (withdrawal.txHash) {
+      const netAmount = getNetSendAmount(withdrawal);
+      const alreadySent = Number(withdrawal.netSent ?? 0);
+      const remaining = Math.round((netAmount - alreadySent) * 1e6) / 1e6;
+
+      if (remaining <= 0.000001 && withdrawal.txHash?.trim()) {
+        // Fully swept previously — just verify and complete
         txHash = withdrawal.txHash;
       } else if (withdrawal.network === "TRC20" && isStablecoin(withdrawal.currency)) {
         txHash = await processTrc20UsdtWithdrawal(withdrawal, wallet, privateKey);
@@ -656,8 +824,9 @@ export async function processPendingWithdrawals(): Promise<number> {
         txHash = await processEvmUsdtWithdrawal(withdrawal, wallet, privateKey);
       } else if (withdrawal.network === "SPL" && isStablecoin(withdrawal.currency)) {
         txHash = await processSplUsdtWithdrawal(withdrawal, wallet, privateKey);
+      } else if (withdrawal.txHash?.trim()) {
+        txHash = withdrawal.txHash;
       } else {
-        const netAmount = getNetSendAmount(withdrawal);
         assertPositiveNetAmount(netAmount);
         txHash = await broadcastFromPrivateKey(
           privateKey,
@@ -666,40 +835,59 @@ export async function processPendingWithdrawals(): Promise<number> {
           withdrawal.currency,
           withdrawal.network
         );
-        await appendWithdrawalTxHash(withdrawal.id, txHash);
+        await appendWithdrawalTxHash(withdrawal.id, txHash, null, netAmount);
       }
 
       assertWithdrawalBroadcastResult(txHash, withdrawal);
       await verifyWithdrawalTransactions(txHash, withdrawal.currency, withdrawal.network);
 
-      await db
+      const [completed] = await db
         .update(withdrawals)
-        .set({ status: "completed", txHash, completedAt: new Date(), error: null })
-        .where(eq(withdrawals.id, withdrawal.id));
-      processed++;
+        .set({
+          status: "completed",
+          txHash,
+          completedAt: new Date(),
+          error: null,
+          netSent: String(getNetSendAmount(withdrawal)),
+          processingStartedAt: null,
+        })
+        .where(
+          and(
+            eq(withdrawals.id, withdrawal.id),
+            or(eq(withdrawals.status, "processing"), eq(withdrawals.status, "pending")),
+            isNull(withdrawals.balanceRefundedAt)
+          )
+        )
+        .returning({ id: withdrawals.id });
+
+      if (completed) processed++;
     } catch (err) {
       if (err instanceof PartialWithdrawalError) {
         netSent = err.netSent;
-        if (txHash) {
-          await db
-            .update(withdrawals)
-            .set({
-              txHash,
-              error: err instanceof Error ? err.message : "Partial withdrawal broadcast",
-            })
-            .where(eq(withdrawals.id, withdrawal.id));
-          continue;
-        }
+        await db
+          .update(withdrawals)
+          .set({
+            status: "pending",
+            netSent: String(netSent),
+            ...(txHash ? { txHash } : {}),
+            error: err.message,
+            processingStartedAt: null,
+          })
+          .where(eq(withdrawals.id, withdrawal.id));
+        continue;
       }
 
       if (
-        (typeof txHash !== "undefined" && (isConfirmationPendingError(err) || isVerifyAmbiguousError(err)))
+        typeof txHash !== "undefined" &&
+        (isConfirmationPendingError(err) || isVerifyAmbiguousError(err))
       ) {
         await db
           .update(withdrawals)
           .set({
+            status: "pending",
             txHash,
             error: err instanceof Error ? err.message : "Awaiting on-chain confirmation",
+            processingStartedAt: null,
           })
           .where(eq(withdrawals.id, withdrawal.id));
         continue;
@@ -711,6 +899,7 @@ export async function processPendingWithdrawals(): Promise<number> {
           .set({
             status: "pending",
             error: err instanceof Error ? err.message : "Temporary error — will retry",
+            processingStartedAt: null,
           })
           .where(eq(withdrawals.id, withdrawal.id));
         continue;
@@ -721,6 +910,7 @@ export async function processPendingWithdrawals(): Promise<number> {
         .update(withdrawals)
         .set({
           status: "failed",
+          processingStartedAt: null,
           error:
             refunded > 0
               ? `${err instanceof Error ? err.message : "Withdrawal broadcast failed"}. ${RESTORED_BALANCE_MSG}`
