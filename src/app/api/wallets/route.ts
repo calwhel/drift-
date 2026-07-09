@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { z } from "zod";
-import { db, wallets } from "@/lib/db";
+import { db, wallets, withdrawals } from "@/lib/db";
 import { authenticateRequest } from "@/lib/api-auth";
 import { requireTwoFactorVerified } from "@/lib/auth";
 import { MERCHANT_WALLET_NETWORKS, disabledNetworkMessage, isMerchantNetworkEnabled, type WalletType } from "@/lib/constants";
@@ -205,6 +205,27 @@ export async function DELETE(req: NextRequest) {
     if (Number(wallet.balance) > 0) {
       return NextResponse.json(
         { error: "Cannot delete wallet with a positive balance. Withdraw funds first." },
+        { status: 400 }
+      );
+    }
+
+    const [pendingWithdrawal] = await db
+      .select({ id: withdrawals.id })
+      .from(withdrawals)
+      .where(
+        and(
+          eq(withdrawals.walletId, id),
+          or(eq(withdrawals.status, "pending"), eq(withdrawals.status, "processing"))
+        )
+      )
+      .limit(1);
+
+    if (pendingWithdrawal) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot delete wallet while a withdrawal is pending. Wait for it to finish or contact support.",
+        },
         { status: 400 }
       );
     }

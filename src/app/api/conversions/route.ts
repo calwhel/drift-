@@ -6,6 +6,8 @@ import {
   listConversionsForUser,
   listSupportedConversionTargets,
   quoteConversion,
+  validateConversionPair,
+  assertConversionOnChainSafe,
 } from "@/lib/wallet/conversion";
 import { db, wallets } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
     const auth = await requireSessionAuth(req);
     if (!auth) {
       return NextResponse.json(
-        { error: "Conversions require a logged-in session with 2FA" },
+        { error: "Conversions require a logged-in session — API keys cannot create conversions." },
         { status: 403 }
       );
     }
@@ -84,12 +86,15 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
     }
 
+    validateConversionPair(fromWallet[0], toWallet[0], auth.userId);
+    await assertConversionOnChainSafe(fromWallet[0], toWallet[0], data.amount);
+
     const quote = quoteConversion(
       fromWallet[0].currency,
       fromWallet[0].network,
       toWallet[0].currency,
       toWallet[0].network,
-      data.amount
+      Math.round(data.amount * 1e6) / 1e6
     );
 
     return NextResponse.json({ quote });

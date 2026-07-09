@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { useAdminSidebar } from "@/components/admin/sidebar-context";
-import { getNetworkLabel } from "@/lib/constants";
+import { getNetworkLabel, isMerchantNetworkEnabled } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 interface UserRow {
@@ -230,10 +230,10 @@ export default function AdminConversionsPage() {
         )}
 
         <p className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          <strong>Ledger conversions</strong> move balances instantly at 1:1 between USDT and USDC on
-          supported networks — no on-chain gas from the platform. Merchants pay network fees only when
-          they withdraw. <strong>Tron is retired</strong> for new wallets; use conversions to move
-          legacy TRC20 ledger balances to Solana, Base, or Polygon.
+          <strong>Ledger conversions</strong> move balances at 1:1 (USDT ↔ USDC). They do not bridge
+          on-chain tokens. Cross-network convert is blocked while the source still has on-chain funds —
+          withdraw or sweep first. <strong>Tron sweep</strong> below sends on-chain tokens out and
+          debits ledger by default so books stay in sync.
         </p>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -295,7 +295,11 @@ export default function AdminConversionsPage() {
                 >
                   <option value="">Select destination…</option>
                   {custodialWallets
-                    .filter((w) => w.id !== form.fromWalletId)
+                    .filter(
+                      (w) =>
+                        w.id !== form.fromWalletId &&
+                        isMerchantNetworkEnabled(w.currency, w.network)
+                    )
                     .map((w) => (
                       <option key={w.id} value={w.id}>
                         {getNetworkLabel(w.currency, w.network)} — {Number(w.balance).toFixed(4)}{" "}

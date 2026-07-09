@@ -1,7 +1,13 @@
 import { eq, and, sql, desc } from "drizzle-orm";
 import { db, wallets, ledgerTransfers } from "../db";
-import { isMerchantNetworkEnabled, isStablecoin, isLegacyTronNetwork } from "../constants";
+import {
+  isMerchantNetworkEnabled,
+  isStablecoin,
+  isLegacyTronNetwork,
+  isLedgerOnlyStablecoin,
+} from "../constants";
 import { logAudit } from "../audit";
+import { getWithdrawableOnChain } from "./withdrawable";
 
 /** Platform spread on cross-coin conversions (0 = 1:1 for USD stablecoins) */
 export const CONVERSION_FEE_RATE = 0;
@@ -56,7 +62,7 @@ export function quoteConversion(
   };
 }
 
-function assertWalletConvertible(wallet: {
+export function assertWalletConvertible(wallet: {
   currency: string;
   network: string;
   walletType: string;
@@ -75,6 +81,75 @@ function assertWalletConvertible(wallet: {
   }
 }
 
+/** Shared validation for quote + execute (same rules). */
+export function validateConversionPair(
+  from: { currency: string; network: string; walletType: string; userId: string },
+  to: { currency: string; network: string; walletType: string; userId: string },
+  userId: string
+) {
+  if (from.userId !== userId || to.userId !== userId) {
+    throw new Error("Both wallets must belong to the same merchant");
+  }
+  assertWalletConvertible(from);
+  assertWalletConvertible(to);
+  if (!isMerchantNetworkEnabled(to.currency, to.network)) {
+    throw new Error(
+      `Cannot convert to ${to.currency} on ${to.network} — choose Solana, Base, Polygon, or another active network`
+    );
+  }
+}
+
+/**
+ * Cross-network conversions move ledger only — they do not bridge on-chain tokens.
+ * Same-network currency swaps (USDT↔USDC on same chain) are fine.
+ * Cross-network: require source on-chain ≈ 0 so we don't strand tokens or create unbacked dest balances.
+ */
+export async function assertConversionOnChainSafe(
+  from: {
+    userId: string;
+    address: string;
+    currency: string;
+    network: string;
+    balance: string;
+  },
+  to: { currency: string; network: string },
+  debitAmount: number
+) {
+  if (from.network === to.network) return;
+
+  if (!isLedgerOnlyStablecoin(from.currency, from.network)) return;
+
+  let onChain: Awaited<ReturnType<typeof getWithdrawableOnChain>>;
+  try {
+    onChain = await getWithdrawableOnChain(
+      from.userId,
+      from.address,
+      from.currency,
+      from.network
+    );
+  } catch (err) {
+    throw new Error(
+      `Could not verify on-chain ${from.currency} on ${from.network}: ${
+        err instanceof Error ? err.message : "RPC error"
+      }. Try again in a minute.`
+    );
+  }
+
+  // Block if meaningful on-chain funds would be stranded after ledger move
+  if (onChain.total > 0.01) {
+    throw new Error(
+      `Cannot convert across networks while ${onChain.total.toFixed(4)} ${from.currency} is still on-chain on ${from.network}. ` +
+        `Withdraw that balance first (or ask admin to sweep), then convert any remaining ledger balance. ` +
+        `Conversions move Drift ledger only — they do not bridge tokens on-chain.`
+    );
+  }
+
+  // Also block converting more ledger than exists if somehow ledger > 0 with 0 on-chain
+  // (orphaned ledger from prior sweep) — allow that path so merchants can exit stranded ledger
+  // to an active network for support/admin handling. Destination withdraw still needs on-chain.
+  void debitAmount;
+}
+
 export async function convertWalletBalance(params: {
   userId: string;
   fromWalletId: string;
@@ -83,13 +158,26 @@ export async function convertWalletBalance(params: {
   createdBy?: "user" | "admin";
   adminUserId?: string;
   note?: string;
+  /** Admin may override on-chain safety for treasury cleanup */
+  skipOnChainCheck?: boolean;
 }) {
-  const { userId, fromWalletId, toWalletId, amount, createdBy = "user", adminUserId, note } =
-    params;
+  const {
+    userId,
+    fromWalletId,
+    toWalletId,
+    amount,
+    createdBy = "user",
+    adminUserId,
+    note,
+    skipOnChainCheck = false,
+  } = params;
 
   if (fromWalletId === toWalletId) {
     throw new Error("Choose two different wallets");
   }
+
+  const roundedAmount = Math.round(amount * 1e6) / 1e6;
+  if (roundedAmount <= 0) throw new Error("Amount must be greater than zero");
 
   const [fromWallet, toWallet] = await Promise.all([
     db.select().from(wallets).where(eq(wallets.id, fromWalletId)).limit(1),
@@ -100,17 +188,11 @@ export async function convertWalletBalance(params: {
   const to = toWallet[0];
 
   if (!from || !to) throw new Error("Wallet not found");
-  if (from.userId !== userId || to.userId !== userId) {
-    throw new Error("Both wallets must belong to the same merchant");
-  }
 
-  assertWalletConvertible(from);
-  assertWalletConvertible(to);
+  validateConversionPair(from, to, userId);
 
-  if (!isMerchantNetworkEnabled(to.currency, to.network)) {
-    throw new Error(
-      `Cannot convert to ${to.currency} on ${to.network} — choose Solana, Base, or Polygon`
-    );
+  if (!skipOnChainCheck) {
+    await assertConversionOnChainSafe(from, to, roundedAmount);
   }
 
   const quote = quoteConversion(
@@ -118,7 +200,7 @@ export async function convertWalletBalance(params: {
     from.network,
     to.currency,
     to.network,
-    amount
+    roundedAmount
   );
 
   const debitStr = String(quote.debitAmount);
