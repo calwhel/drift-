@@ -9,6 +9,11 @@ import { validateWalletAddress } from "../wallet/generate";
 import { getEvmChain, getEvmTokenContract, getEvmTokenDecimals, isEvmUsdtNetwork } from "../evm/chains";
 import { withEvmRpc } from "../evm/rpc";
 import { Contract } from "ethers";
+import {
+  formatSolanaRpcError,
+  throttleSolanaBalanceRead,
+  withSolanaConnection,
+} from "./solana-rpc";
 
 export interface OnChainWalletBalance {
   amount: number | null;
@@ -292,72 +297,67 @@ async function fetchSplTokenBalance(address: string, currency: string): Promise<
   }
 
   try {
-    const { Connection, PublicKey } = await import("@solana/web3.js");
-    const { getAssociatedTokenAddress } = await import("@solana/spl-token");
+    return await throttleSolanaBalanceRead(async () => {
+      const { PublicKey } = await import("@solana/web3.js");
+      const { getAssociatedTokenAddress } = await import("@solana/spl-token");
 
-    const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
-    const connection = new Connection(rpc, "confirmed");
-    const owner = new PublicKey(address);
-    const mint = new PublicKey(mintAddress);
+      return withSolanaConnection(async (connection) => {
+        const owner = new PublicKey(address);
+        const mint = new PublicKey(mintAddress);
 
-    const solBalance = (await connection.getBalance(owner)) / 1e9;
+        const solBalance = (await connection.getBalance(owner)) / 1e9;
 
-    let amount = 0;
-    try {
-      const ata = await getAssociatedTokenAddress(mint, owner);
-      const tokenAccount = await connection.getTokenAccountBalance(ata);
-      amount = Number(tokenAccount.value.uiAmount ?? 0);
-    } catch {
-      amount = 0;
-    }
+        let amount = 0;
+        try {
+          const ata = await getAssociatedTokenAddress(mint, owner);
+          const tokenAccount = await connection.getTokenAccountBalance(ata);
+          amount = Number(tokenAccount.value.uiAmount ?? 0);
+        } catch {
+          amount = 0;
+        }
 
-    return {
-      amount,
-      currency,
-      network: "SPL",
-      nativeGas: { amount: solBalance, symbol: "SOL" },
-    };
+        return {
+          amount,
+          currency,
+          network: "SPL",
+          nativeGas: { amount: solBalance, symbol: "SOL" },
+        };
+      });
+    });
   } catch (err) {
     return {
       amount: null,
       currency,
       network: "SPL",
       nativeGas: null,
-      error: err instanceof Error ? err.message : "Failed to fetch SPL balance",
+      error: formatSolanaRpcError(err),
     };
   }
 }
 
 async function fetchSolanaNativeBalance(address: string): Promise<OnChainWalletBalance> {
   try {
-    const rpc = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
-    const res = await fetch(rpc, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getBalance",
-        params: [address],
-      }),
-    });
-    if (!res.ok) throw new Error(`Solana RPC HTTP ${res.status}`);
-    const data = (await res.json()) as { result?: { value?: number }; error?: { message?: string } };
-    if (data.error) throw new Error(data.error.message ?? "Solana RPC error");
-    const amount = (data.result?.value ?? 0) / 1e9;
-    return {
-      amount,
-      currency: "SOL",
-      network: "Solana",
-      nativeGas: { amount, symbol: "SOL" },
-    };
+    return await throttleSolanaBalanceRead(async () =>
+      withSolanaConnection(async (connection) => {
+        const { PublicKey } = await import("@solana/web3.js");
+        const owner = new PublicKey(address);
+        const lamports = await connection.getBalance(owner);
+        const amount = lamports / 1e9;
+        return {
+          amount,
+          currency: "SOL",
+          network: "Solana",
+          nativeGas: { amount, symbol: "SOL" },
+        };
+      })
+    );
   } catch (err) {
     return {
       amount: null,
       currency: "SOL",
       network: "Solana",
       nativeGas: null,
-      error: err instanceof Error ? err.message : "Failed to fetch Solana balance",
+      error: formatSolanaRpcError(err),
     };
   }
 }
@@ -460,11 +460,12 @@ export async function fetchOnChainBalance(
 export async function fetchOnChainBalancesForWallets<
   T extends { address: string; currency: string; network: string },
 >(items: T[]): Promise<Array<T & { onChain: OnChainWalletBalance }>> {
-  const results = await Promise.all(
-    items.map(async (item) => ({
+  const results: Array<T & { onChain: OnChainWalletBalance }> = [];
+  for (const item of items) {
+    results.push({
       ...item,
       onChain: await fetchOnChainBalance(item.address, item.currency, item.network),
-    }))
-  );
+    });
+  }
   return results;
 }

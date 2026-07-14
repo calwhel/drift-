@@ -4,6 +4,7 @@ import { Wallet, keccak256, getBytes, computeAddress } from "ethers";
 import { Keypair } from "@solana/web3.js";
 import bs58 from "bs58";
 import { sha256 } from "@noble/hashes/sha2.js";
+import * as bitcoin from "bitcoinjs-lib";
 import { eq, sql } from "drizzle-orm";
 import { db, derivationCounter } from "../db";
 import { defaultNetworkForCurrency } from "../constants";
@@ -43,13 +44,15 @@ function tronAddressFromPrivateKey(privateKeyHex: string): string {
   return bs58.encode(Buffer.concat([addressBytes, Buffer.from(checksum)]));
 }
 
+/** BIP84 native segwit (bc1…) — matches m/84'/0'/0'/0/n derivation path */
 function bitcoinAddressFromKey(key: HDKey): string {
-  const pubkey = key.publicKey!;
-  const hash = sha256(pubkey);
-  const version = 0x00;
-  const payload = Buffer.concat([Buffer.from([version]), Buffer.from(hash)]);
-  const checksum = sha256(sha256(payload)).slice(0, 4);
-  return bs58.encode(Buffer.concat([payload, Buffer.from(checksum)]));
+  if (!key.publicKey) throw new Error("Missing public key for Bitcoin derivation");
+  const payment = bitcoin.payments.p2wpkh({
+    pubkey: Buffer.from(key.publicKey),
+    network: bitcoin.networks.bitcoin,
+  });
+  if (!payment.address) throw new Error("Failed to derive Bitcoin address");
+  return payment.address;
 }
 
 function solanaAddressFromKey(key: HDKey): string {
