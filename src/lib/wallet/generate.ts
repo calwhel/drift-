@@ -24,7 +24,7 @@ function bitcoinAddressFromPrivateKey(privateKeyHex: string): string {
   const { ECPairFactory } = require("ecpair");
   const ECPair = ECPairFactory(ecc);
   const keyPair = ECPair.fromPrivateKey(Buffer.from(hex, "hex"), { network: bitcoin.networks.bitcoin });
-  const payment = bitcoin.payments.p2pkh({
+  const payment = bitcoin.payments.p2wpkh({
     pubkey: keyPair.publicKey,
     network: bitcoin.networks.bitcoin,
   });
