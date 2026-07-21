@@ -91,6 +91,13 @@ export function startPaymentPoller(): void {
     return;
   }
 
+  if (
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.NEXT_PHASE === "phase-export"
+  ) {
+    return;
+  }
+
   if (!process.env.DATABASE_URL) {
     console.warn("[payment-poller] DATABASE_URL not set — internal poller disabled");
     return;
