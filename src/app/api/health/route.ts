@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { getDbErrorMessage } from "@/lib/db/errors";
 import { getTelegramConfigStatus } from "@/lib/telegram";
 import { isMasterWalletConfigured } from "@/lib/wallet/master-wallet";
 import { getTronGasWalletStatus } from "@/lib/wallet/gas-wallet";
@@ -134,7 +135,7 @@ export async function GET() {
       message: "All systems operational",
     });
   } catch (err) {
-    body.error = err instanceof Error ? err.message : "Database connection failed";
+    body.error = getDbErrorMessage(err);
     return unhealthy(body);
   }
 }
