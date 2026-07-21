@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, users } from "./db";
+import { isDbUnavailableError } from "./db/errors";
 import { rateLimit } from "./rate-limit";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -78,6 +79,9 @@ export const authOptions: NextAuthOptions = {
           };
         } catch (err) {
           console.error("Auth authorize error:", err);
+          if (isDbUnavailableError(err)) {
+            throw new Error("DatabaseUnavailable");
+          }
           return null;
         }
       },

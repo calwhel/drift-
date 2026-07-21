@@ -10,6 +10,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   CredentialsSignin: "Invalid email or password",
   Configuration: "Server auth misconfiguration — check NEXTAUTH_URL and NEXTAUTH_SECRET",
   Callback: "Authentication callback failed",
+  DatabaseUnavailable: "Database unavailable. Please try again in a moment.",
   Default: "Sign in failed. Please try again.",
 };
 

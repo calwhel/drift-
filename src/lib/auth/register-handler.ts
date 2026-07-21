@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, users } from "@/lib/db";
+import { getDbErrorMessage } from "@/lib/db/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { notifyNewSignup } from "@/lib/telegram";
 import { ensureOrganizationForUser } from "@/lib/org";
@@ -17,21 +18,7 @@ function formatError(err: unknown): string {
   if (err instanceof z.ZodError) {
     return err.issues.map((i) => i.message).join(". ");
   }
-  if (err instanceof Error) {
-    const msg = err.message;
-    if (msg.includes("DATABASE_URL")) return "Server misconfigured: database not connected";
-    if (msg.includes("does not exist")) {
-      return "Database tables missing. Migrations may not have run — contact support or retry deploy.";
-    }
-    if (msg.includes("connect") || msg.includes("ECONNREFUSED")) {
-      return "Cannot connect to database. Check DATABASE_URL.";
-    }
-    if (msg.includes("unique") || msg.includes("duplicate")) {
-      return "Email already registered";
-    }
-    return msg;
-  }
-  return "Registration failed";
+  return getDbErrorMessage(err) || "Registration failed";
 }
 
 export async function POST(req: Request) {
