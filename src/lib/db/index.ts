@@ -1,12 +1,10 @@
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 import * as schema from "./schema";
 
-// Neon Pool uses WebSockets; Node < 22 needs the `ws` package.
-if (typeof globalThis.WebSocket === "undefined") {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  neonConfig.webSocketConstructor = require("ws");
-}
+// Neon Pool uses WebSockets; always use `ws` in Node.js for consistent behavior.
+neonConfig.webSocketConstructor = ws;
 
 let _pool: Pool | null = null;
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
