@@ -1,5 +1,13 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Next.js invokes instrumentation during `next build`; skip DB/poller side effects then.
+    if (
+      process.env.NEXT_PHASE === "phase-production-build" ||
+      process.env.NEXT_PHASE === "phase-export"
+    ) {
+      return;
+    }
+
     const { startPaymentPoller } = await import("@/lib/payment-poller");
     startPaymentPoller();
 
