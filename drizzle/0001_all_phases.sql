@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS "audit_logs" (
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "organization_id" uuid REFERENCES "organizations"("id") ON DELETE SET NULL;
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "email_verified" boolean DEFAULT false NOT NULL;
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "totp_secret" text;
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "totp_enabled" boolean DEFAULT false NOT NULL;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_enabled" boolean DEFAULT false NOT NULL;
 
 ALTER TABLE "wallets" ADD COLUMN IF NOT EXISTS "derivation_index" integer;
 
